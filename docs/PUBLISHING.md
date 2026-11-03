@@ -63,7 +63,7 @@ This builds all installers on all three systems but **publishes nothing**.
 
 ## 7. Tag the release and push the tag
 
-The tag must match `version` in `package.json`, with a leading `v`. The version is `0.1.0`, so the tag is `v0.1.0`. If they differ, the release workflow stops on purpose.
+The tag is the single source of truth for the version: the release workflow sets the app version from it (`v0.1.0` builds app version `0.1.0`), so the tag and `package.json` can never conflict. The tag must be a valid version such as `v0.1.0` or `v1.2.3`. For the first release use `v0.1.0`, which matches the CHANGELOG and README.
 
 ```bash
 git tag -a v0.1.0 -m "VariantScope 0.1.0"
@@ -102,4 +102,4 @@ git push origin v0.1.0
   ```
 
 - **Pages shows a blank page or 404 for assets.** The site must be served from `/VariantScope/`; the Pages workflow sets that automatically. Do not deploy the output of a plain `npm run build:web` by hand.
-- **The release job says the tag does not match package.json.** Change `version` in `package.json` to match, commit, and re-tag.
+- **The release job fails at "Set the app version from the tag".** The tag is not a valid version (it must look like `v0.1.0`). Delete it as shown above and re-tag.

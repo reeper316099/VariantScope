@@ -13,10 +13,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Lint, format, unit tests with coverage, the web build, and the browser end-to-end tests.
-  test:
+  # Quick checks: lint, format, unit tests with coverage, and the web build (about a minute).
+  check:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -28,13 +28,30 @@ jobs:
       - run: npx prettier --check .
       - run: npx vitest run --coverage --coverage.reporter=text-summary
       - run: npm run build:web
+
+  # Browser end-to-end tests against the live public APIs. They take about 7 minutes in total, so
+  # they are split into 4 shards that run at the same time on separate machines.
+  e2e-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
       - run: npx playwright install --with-deps chromium
-      # The e2e tests use the live public APIs. The screenshot spec only refreshes README images.
-      - run: npx playwright test --project=web --grep-invert screenshot
+      # The screenshot spec only refreshes README images, so CI skips it.
+      - run: npx playwright test --project=web --grep-invert screenshot --shard=${{ matrix.shard }}/4
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
-          name: playwright-results
+          name: playwright-results-shard-${{ matrix.shard }}
           path: test-results/
           if-no-files-found: ignore
 
@@ -71,12 +88,15 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install-deps chromium
-      # Electron's Linux sandbox helper must be root-owned and setuid, and Ubuntu 24.04 restricts
-      # unprivileged user namespaces; both are standard Electron-on-CI setup steps.
+      # Ubuntu 24.04 restricts unprivileged user namespaces, which Electron's sandbox uses, so allow
+      # them on this runner. Older Electron builds also shipped a setuid chrome-sandbox helper; if
+      # this version still has it, give it the ownership and permissions it needs.
       - run: |
-          sudo chown root node_modules/electron/dist/chrome-sandbox
-          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          if [ -f node_modules/electron/dist/chrome-sandbox ]; then
+            sudo chown root node_modules/electron/dist/chrome-sandbox
+            sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+          fi
       - run: npm run build:electron
       - run: xvfb-run --auto-servernum npx playwright test --project=electron
       - uses: actions/upload-artifact@v7

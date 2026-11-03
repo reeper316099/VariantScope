@@ -14,6 +14,9 @@ export default defineConfig({
   timeout: 240_000,
   expect: { timeout: 20_000 },
   globalTimeout: 40 * 60_000,
+  // Serial describe blocks (one gene each) stay together, but separate blocks can be split across
+  // CI shards. Locally there is one worker, so nothing runs in parallel.
+  fullyParallel: true,
   workers: 1,
   // Live public APIs can hiccup; CI gets one retry (a retried test is reported as "flaky").
   retries: process.env.CI ? 1 : 0,
