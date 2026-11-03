@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VariantScope</title>
+    <link rel="icon" href="data:," />
+    <script type="module" src="./main.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <h1 class="brand">VariantScope</h1>
+      <form id="search-form" class="search" role="search" autocomplete="off">
+        <label for="gene-input" class="visually-hidden">Human gene symbol</label>
+        <input id="gene-input" type="search" placeholder="Gene symbol, e.g. BRCA1" maxlength="20" />
+      </form>
+      <button id="theme-toggle" class="icon-button" type="button" aria-label="Toggle dark mode">
+        Theme
+      </button>
+    </header>
+
+    <main class="page">
+      <section class="card empty-state" aria-live="polite">
+        <h2>Explore a gene</h2>
+        <p>
+          Enter a human gene symbol to see where disease-linked protein changes sit in the 3D
+          structure.
+        </p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span id="env-label"></span>
+      <span>Educational use only. Not medical advice.</span>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,99 @@
+{
+ "_fixture": "FIXTURE: real gnomAD gnomad_r4 GRCh38 variants for TP53 (selected) saved 2026-11-03, trimmed for tests. Not live data.",
+ "data": {
+  "gene": {
+   "variants": [
+    {
+     "variant_id": "17-7673776-G-A",
+     "hgvsp": "p.Arg282Trp",
+     "hgvsc": "c.844C>T",
+     "consequence": "missense_variant",
+     "joint": {
+      "ac": 1,
+      "an": 1613884
+     }
+    },
+    {
+     "variant_id": "17-7673802-C-T",
+     "hgvsp": "p.Arg273His",
+     "hgvsc": "c.818G>A",
+     "consequence": "missense_variant",
+     "joint": {
+      "ac": 18,
+      "an": 1613942
+     }
+    },
+    {
+     "variant_id": "17-7674220-C-T",
+     "hgvsp": "p.Arg248Gln",
+     "hgvsc": "c.743G>A",
+     "consequence": "missense_variant",
+     "joint": {
+      "ac": 12,
+      "an": 1613554
+     }
+    },
+    {
+     "variant_id": "17-7675088-C-T",
+     "hgvsp": "p.Arg175His",
+     "hgvsc": "c.524G>A",
+     "consequence": "missense_variant",
+     "joint": {
+      "ac": 7,
+      "an": 1614062
+     }
+    },
+    {
+     "variant_id": "17-7661972-G-T",
+     "hgvsp": "p.Ser275Arg",
+     "hgvsc": "c.825C>A",
+     "consequence": "missense_variant",
+     "joint": {
+      "ac": 0,
+      "an": 156982
+     }
+    },
+    {
+     "variant_id": "17-7661972-G-C",
+     "hgvsp": "p.Ser275Arg",
+     "hgvsc": "c.825C>G",
+     "consequence": "missense_variant",
+     "joint": {
+      "ac": 0,
+      "an": 156982
+     }
+    },
+    {
+     "variant_id": "17-7661942-G-A",
+     "hgvsp": "p.Tyr285Tyr",
+     "hgvsc": "c.855C>T",
+     "consequence": "synonymous_variant",
+     "joint": {
+      "ac": 0,
+      "an": 155218
+     }
+    },
+    {
+     "variant_id": "17-7661945-G-A",
+     "hgvsp": "p.Leu284Leu",
+     "hgvsc": "c.852C>T",
+     "consequence": "synonymous_variant",
+     "joint": {
+      "ac": 0,
+      "an": 155820
+     }
+    },
+    {
+     "variant_id": "17-7661944-A-G",
+     "hgvsp": "p.Tyr285His",
+     "hgvsc": "c.853T>C",
+     "consequence": "missense_variant",
+     "joint": {
+      "ac": 0,
+      "an": 155700
+     }
+    }
+   ]
+  }
+ }
+}

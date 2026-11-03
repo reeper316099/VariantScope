@@ -1,0 +1,20 @@
+{
+ "_fixture": "FIXTURE: real gnomAD constraint response for TP53 saved 2026-11-03, trimmed for tests. Not live data.",
+ "data": {
+  "gene": {
+   "canonical_transcript_id": "ENST00000269305",
+   "mane_select_transcript": {
+    "refseq_id": "NM_000546"
+   },
+   "gnomad_constraint": {
+    "pli": 0.999595868281925,
+    "oe_lof_upper": 0.4183620979251529,
+    "mis_z": 1.121638987172852,
+    "oe_mis": 0.8851341366742863,
+    "exp_mis": 524.2143317886109,
+    "obs_mis": 464,
+    "flags": []
+   }
+  }
+ }
+}

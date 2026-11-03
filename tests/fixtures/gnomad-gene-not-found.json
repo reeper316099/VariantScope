@@ -1,0 +1,11 @@
+{
+ "_fixture": "FIXTURE: real gnomAD error response for an unknown gene saved 2026-11-03, trimmed for tests. Not live data.",
+ "errors": [
+  {
+   "message": "Gene not found"
+  }
+ ],
+ "data": {
+  "gene": null
+ }
+}

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+release/
+coverage/
+playwright-report/
+test-results/
+scratch/
+.DS_Store
