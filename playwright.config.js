@@ -30,6 +30,9 @@ export default defineConfig({
         // Locally use the installed Chrome (no browser download); CI installs Playwright's Chromium.
         channel: process.env.CI ? undefined : 'chrome',
         headless: true,
+        // Evidence for failed runs (uploaded as a CI artifact).
+        screenshot: 'only-on-failure',
+        trace: 'retain-on-failure',
         launchOptions: { args: WEBGL_ARGS },
       },
     },

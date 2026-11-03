@@ -125,8 +125,9 @@ for (const [gene, known] of Object.entries(GENES)) {
       await page.fill('#table input[type=search]', '');
       await page.locator('#plot').scrollIntoViewIfNeeded();
       const spot = await page.evaluate((id) => window.__vsTest.plot.pointPixel(id), ids[1]);
-      const box = await page.locator('#plot').boundingBox();
-      await page.mouse.click(box.x + spot.x, box.y + spot.y);
+      // Element-relative click: Playwright scrolls the canvas into view itself and fails with a clear
+      // message if something covers the target, unlike a click at absolute screen coordinates.
+      await page.locator('#plot').click({ position: { x: spot.x, y: spot.y } });
       await settle3d(page);
       expect((await selected()).position).toBe(known[1][1]);
       expect(await page.locator('#viewer').getAttribute('data-selected-residue')).toBe(
@@ -147,8 +148,7 @@ for (const [gene, known] of Object.entries(GENES)) {
         (position) => window.__vsTest.viewer.screenPoint(position),
         known[2][1],
       );
-      const viewerBox = await page.locator('#viewer').boundingBox();
-      await page.mouse.move(viewerBox.x + sphere.x, viewerBox.y + sphere.y);
+      await page.locator('#viewer').hover({ position: { x: sphere.x, y: sphere.y } });
       await expect(page.locator('.viewer-tooltip')).toBeVisible();
       // Another sphere can sit in front of the target, and picking returns the nearest one. So the
       // check is that hover, click and the other views all agree on the residue that was picked.
@@ -157,7 +157,7 @@ for (const [gene, known] of Object.entries(GENES)) {
       );
       expect(hovered, 'the tooltip names a residue').not.toBeNull();
       const [, hoveredName, hoveredNumber] = hovered;
-      await page.mouse.click(viewerBox.x + sphere.x, viewerBox.y + sphere.y);
+      await page.locator('#viewer').click({ position: { x: sphere.x, y: sphere.y } });
       await expect
         .poll(() => page.locator('#viewer').getAttribute('data-selected-residue'))
         .toBe(`${hoveredName}${hoveredNumber}`);
