@@ -7,7 +7,7 @@
   --text-muted: #4b5b70;
   --border: #d5dee8;
   --primary: #0b1f3a;
-  --accent-ui: #12486b; /* light-mode accent for links and focus */
+  --accent-ui: #12486b; /* light-mode accent: links, focus, active chips */
   --secondary: #14b8a6;
   --accent: #ff6b6b; /* pathogenic */
   --benign: #22c55e;
@@ -15,6 +15,20 @@
   --shadow: 0 2px 10px rgb(11 31 58 / 8%);
   --radius: 14px;
   --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --viewer-bg: #ffffff;
+
+  /* Pills and badges: tinted background + dark text keeps text contrast above 4.5:1. */
+  --pill-pathogenic-bg: #ffe1e1;
+  --pill-pathogenic-text: #7a1414;
+  --pill-benign-bg: #d9f7e3;
+  --pill-benign-text: #0f5226;
+  --pill-uncertain-bg: #e6ebf1;
+  --pill-uncertain-text: #36455a;
+  --banner-info-bg: #e3f0fb;
+  --banner-warn-bg: #fff2cc;
+  --banner-warn-text: #5c4300;
+  --banner-error-bg: #ffe1e1;
+  --banner-error-text: #7a1414;
   color-scheme: light;
 }
 
@@ -27,5 +41,18 @@
   --border: #25385a;
   --accent-ui: #5fd0c5;
   --shadow: 0 2px 12px rgb(0 0 0 / 40%);
+  --viewer-bg: #0d1a30;
+
+  --pill-pathogenic-bg: #5a1d25;
+  --pill-pathogenic-text: #ffd9d9;
+  --pill-benign-bg: #14452a;
+  --pill-benign-text: #d3f7e0;
+  --pill-uncertain-bg: #2b3d5c;
+  --pill-uncertain-text: #dbe5f2;
+  --banner-info-bg: #153253;
+  --banner-warn-bg: #4a3a0b;
+  --banner-warn-text: #ffe9a8;
+  --banner-error-bg: #5a1d25;
+  --banner-error-text: #ffd9d9;
   color-scheme: dark;
 }

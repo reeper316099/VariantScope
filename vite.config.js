@@ -1,4 +1,5 @@
 // Vite config: one codebase, two builds (web for GitHub Pages, electron for the desktop app).
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import { buildCsp } from './electron/csp.js';
 
@@ -20,13 +21,33 @@ function cspPlugin(isElectron) {
   };
 }
 
+const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+
+// 3Dmol contains one eval() that only runs if a callback is passed as a *string* (a py3Dmol
+// feature). We never do that, and the strict CSP would block it anyway, so the build replaces it
+// with a thrown error: the shipped bundle contains no eval. The build fails if the code changes.
+function noEvalPlugin() {
+  const EVAL_CALL = 'callback = eval("(" + callback + ")");';
+  return {
+    name: 'variantscope-no-eval',
+    apply: 'build',
+    transform(code, id) {
+      if (!id.includes('3Dmol.es6.js')) return null;
+      if (!code.includes(EVAL_CALL))
+        throw new Error('3Dmol eval call not found: update noEvalPlugin.');
+      return code.replace(EVAL_CALL, 'throw new Error("String callbacks are not supported.");');
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const isElectron = mode === 'electron';
   return {
     root: 'src',
     // Electron serves files from its own app:// protocol; Pages needs the repo-name subpath.
     base: isElectron ? './' : (process.env.VITE_BASE ?? '/'),
-    plugins: [cspPlugin(isElectron)],
+    define: { __APP_VERSION__: JSON.stringify(version) },
+    plugins: [noEvalPlugin(), cspPlugin(isElectron)],
     server: { port: 5173, strictPort: true },
     build: {
       outDir: isElectron ? '../dist/electron-renderer' : '../dist/web',

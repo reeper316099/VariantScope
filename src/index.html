@@ -8,30 +8,239 @@
     <script type="module" src="./main.js"></script>
   </head>
   <body>
+    <a class="skip-link" href="#main">Skip to results</a>
     <header class="topbar">
       <h1 class="brand">VariantScope</h1>
       <form id="search-form" class="search" role="search" autocomplete="off">
         <label for="gene-input" class="visually-hidden">Human gene symbol</label>
-        <input id="gene-input" type="search" placeholder="Gene symbol, e.g. BRCA1" maxlength="20" />
+        <input
+          id="gene-input"
+          type="search"
+          placeholder="Gene symbol, e.g. BRCA1"
+          maxlength="20"
+          aria-describedby="search-error"
+        />
       </form>
-      <button id="theme-toggle" class="icon-button" type="button" aria-label="Toggle dark mode">
-        Theme
-      </button>
+      <div class="top-actions">
+        <button id="about-button" class="icon-button" type="button">About</button>
+        <button id="theme-toggle" class="icon-button" type="button" aria-label="Toggle dark mode">
+          Theme
+        </button>
+      </div>
     </header>
+    <p id="search-error" class="search-error" role="alert"></p>
+    <div class="quick-row">
+      <div id="example-chips" class="chip-row"></div>
+      <div id="recent-searches" class="chip-row"></div>
+    </div>
 
-    <main class="page">
-      <section class="card empty-state" aria-live="polite">
+    <main id="main" class="page" tabindex="-1">
+      <div id="banners" class="banners"></div>
+
+      <section id="welcome" class="card empty-state" aria-live="polite">
         <h2>Explore a gene</h2>
         <p>
-          Enter a human gene symbol to see where disease-linked protein changes sit in the 3D
-          structure.
+          Enter a human gene symbol to see where disease-linked protein changes sit in the AlphaFold
+          3D structure, how confident that structure is, and how rare the changes are in the general
+          population.
         </p>
       </section>
+
+      <div id="results" hidden>
+        <section id="gene-header" class="card gene-header" aria-live="polite"></section>
+
+        <section
+          id="stats-panel"
+          class="panel stat-section"
+          data-panel="stats"
+          aria-label="Summary"
+        >
+          <div class="panel-content"><div id="stat-cards" class="stat-grid"></div></div>
+        </section>
+
+        <div class="layout-grid">
+          <section
+            id="viewer-panel"
+            class="card panel viewer-card"
+            data-panel="viewer"
+            data-skeleton="tall"
+          >
+            <div class="panel-content">
+              <div class="card-head">
+                <h2>3D structure</h2>
+                <div class="control-row">
+                  <label class="field"
+                    >Colour
+                    <select id="color-mode">
+                      <option value="plddt">AlphaFold confidence (pLDDT)</option>
+                      <option value="density">Pathogenic variant density</option>
+                      <option value="plain">Plain gray</option>
+                    </select>
+                  </label>
+                  <label class="toggle"><input id="show-benign" type="checkbox" /> Benign</label>
+                  <label class="toggle"
+                    ><input id="show-vus" type="checkbox" /> VUS &amp; conflicting</label
+                  >
+                </div>
+              </div>
+              <div
+                id="viewer"
+                class="viewer"
+                role="img"
+                aria-label="Interactive 3D protein structure. A text version of the data follows below."
+              ></div>
+              <div class="control-row viewer-buttons">
+                <button id="view-reset" class="button" type="button">Reset view</button>
+                <button id="view-spin" class="button" type="button" aria-pressed="false">
+                  Spin
+                </button>
+                <button id="view-fullscreen" class="button" type="button">Fullscreen</button>
+                <button id="view-png" class="button" type="button">Save PNG</button>
+              </div>
+              <ul id="plddt-legend" class="legend" aria-label="pLDDT colour legend"></ul>
+              <ul id="density-legend" class="legend" aria-label="Density colour legend" hidden>
+                <li>
+                  <span class="swatch swatch-d0" aria-hidden="true"></span
+                  ><span class="swatch swatch-d1" aria-hidden="true"></span
+                  ><span class="swatch swatch-d2" aria-hidden="true"></span
+                  ><span class="swatch swatch-d3" aria-hidden="true"></span
+                  ><span class="swatch swatch-d4" aria-hidden="true"></span>
+                  Pathogenic variants within 10 residues: none (light) to many (dark)
+                </li>
+              </ul>
+              <ul class="legend" aria-label="Variant legend">
+                <li>
+                  <span class="shape shape-pathogenic" aria-hidden="true"></span> Pathogenic /
+                  likely pathogenic (red spheres)
+                </li>
+                <li>
+                  <span class="shape shape-benign" aria-hidden="true"></span> Benign / likely benign
+                  (green, optional)
+                </li>
+                <li>
+                  <span class="shape shape-uncertain" aria-hidden="true"></span> VUS / conflicting
+                  (gray, optional)
+                </li>
+              </ul>
+              <details class="text-view">
+                <summary>Text version of the 3D view</summary>
+                <div id="structure-text"></div>
+              </details>
+            </div>
+          </section>
+
+          <aside class="side">
+            <section id="constraint-panel" class="card panel" data-panel="constraint">
+              <div class="panel-content">
+                <h2>Gene constraint (gnomAD)</h2>
+                <div id="constraint"></div>
+              </div>
+            </section>
+            <section id="meaning-panel" class="card panel" data-panel="meaning">
+              <div class="panel-content">
+                <h2>What this means</h2>
+                <div id="meaning"></div>
+              </div>
+            </section>
+            <section id="selected-panel" class="card">
+              <h2>Selected variant</h2>
+              <div id="selected" aria-live="polite"></div>
+            </section>
+          </aside>
+        </div>
+
+        <section id="plot-panel" class="card panel" data-panel="plot">
+          <div class="panel-content">
+            <div class="card-head">
+              <h2>Variants along the protein</h2>
+              <div class="control-row">
+                <label class="toggle"
+                  ><input id="plot-vus" type="checkbox" /> VUS &amp; conflicting</label
+                >
+                <button id="plot-reset" class="button" type="button">Reset zoom</button>
+              </div>
+            </div>
+            <div class="plot-wrap">
+              <canvas
+                id="plot"
+                role="img"
+                aria-label="Lollipop plot of ClinVar variants along the protein. The variant table below has the same data as text."
+              ></canvas>
+            </div>
+            <ul class="legend" aria-label="Plot legend">
+              <li>
+                <span class="shape shape-pathogenic" aria-hidden="true"></span> Pathogenic (circle)
+                / likely pathogenic (triangle) above the line
+              </li>
+              <li>
+                <span class="shape shape-benign" aria-hidden="true"></span> Benign (circle) / likely
+                benign (triangle) below the line
+              </li>
+              <li>
+                Height = &minus;log10(gnomAD allele frequency), capped.
+                <strong>Absent from gnomAD = full height.</strong> Hollow = frequency unknown.
+              </li>
+              <li>Drag across the plot to zoom. The strip under the axis shows AlphaFold pLDDT.</li>
+            </ul>
+          </div>
+        </section>
+
+        <section id="table-panel" class="card panel" data-panel="table">
+          <div class="panel-content">
+            <h2>Variant table</h2>
+            <div id="table"></div>
+          </div>
+        </section>
+      </div>
     </main>
 
     <footer class="footer">
       <span id="env-label"></span>
       <span>Educational use only. Not medical advice.</span>
     </footer>
+
+    <dialog id="about-dialog" class="dialog" aria-labelledby="about-title">
+      <h2 id="about-title">About VariantScope</h2>
+      <p>
+        VariantScope combines the AlphaFold structure of a human protein with ClinVar variants and
+        gnomAD population frequencies. <strong>Educational use only. Not medical advice.</strong>
+      </p>
+      <h3>Limitations</h3>
+      <ul>
+        <li>
+          AlphaFold predicts structure. A prediction is not experimental proof, and low pLDDT
+          regions are uncertain.
+        </li>
+        <li>
+          ClinVar review quality varies. Check the review status, and note that submitters can
+          disagree.
+        </li>
+        <li>
+          VUS means &ldquo;variant of uncertain significance&rdquo;: it is not evidence for or
+          against disease.
+        </li>
+        <li>
+          Residue numbers come from the UniProt reference sequence. ClinVar and gnomAD use a
+          specific transcript (often MANE Select), so numbering can differ for some genes.
+          VariantScope checks every variant and does not plot ones that do not match.
+        </li>
+        <li>
+          Only single-residue missense changes are shown. Frameshift, nonsense, splice, in-frame and
+          non-coding records are counted but not plotted.
+        </li>
+        <li>
+          For large genes only a limited number of variants are loaded (pathogenic and benign
+          first).
+        </li>
+        <li>
+          gnomAD reflects the people sampled, not the whole world, and is not a disease-free control
+          group.
+        </li>
+      </ul>
+      <h3>Data used</h3>
+      <div id="about-provenance"></div>
+      <p class="note">App version <span id="about-version"></span>.</p>
+      <form method="dialog"><button class="button" type="submit">Close</button></form>
+    </dialog>
   </body>
 </html>

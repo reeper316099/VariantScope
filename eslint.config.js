@@ -24,7 +24,11 @@ export default [
   // Renderer code runs in a browser context.
   {
     files: ['src/**/*.js'],
-    languageOptions: { ecmaVersion: 2023, sourceType: 'module', globals: globals.browser },
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: 'module',
+      globals: { ...globals.browser, __APP_VERSION__: 'readonly' },
+    },
     rules: securityRules,
   },
   // Electron main process and tooling run in Node (ES modules).
@@ -35,7 +39,7 @@ export default [
   },
   // The preload script must be CommonJS because it runs sandboxed.
   {
-    files: ['electron/**/*.cjs'],
+    files: ['electron/**/*.cjs', 'scripts/**/*.cjs'],
     languageOptions: { ecmaVersion: 2023, sourceType: 'commonjs', globals: globals.node },
     rules: securityRules,
   },

@@ -12,7 +12,7 @@ const EUTILS = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils';
 export const MAX_VARIANTS = 1500; // cap on variants loaded per gene (the UI shows a notice)
 const BATCH_SIZE = 200; // ids per esummary request
 const ESEARCH_PAGE = 5000; // esearch returns at most this many ids per request
-const NCBI_GAP_MS = 340; // NCBI allows 3 requests/second without an API key
+const NCBI_GAP_MS = 400; // NCBI allows 3 requests/second without an API key; stay safely below
 
 // ClinVar's "clinsig" properties: the four confident classes we load first when capping.
 const CONFIDENT_CLASSES =
@@ -58,20 +58,21 @@ function sleep(ms, signal) {
 // time, so they do not count toward the gap.
 let queue = Promise.resolve();
 let lastNetworkCall = 0;
-function ncbiGet(url, signal) {
+function ncbiGet(url, signal, track) {
   const run = queue.then(async () => {
     await sleep(Math.max(0, lastNetworkCall + NCBI_GAP_MS - Date.now()), signal);
     const started = Date.now();
     const reply = await getJson(url, { signal });
     if (!reply.fromCache) lastNetworkCall = started;
+    track?.(reply);
     return reply;
   });
   queue = run.catch(() => {});
   return run;
 }
 
-// Runs an esearch and returns {count, ids} (ids limited to `retmax`).
-async function esearch(term, retmax, signal) {
+// Runs an esearch and returns {count, ids} (ids limited to `retmax`). `track` sees every reply.
+async function esearch(term, retmax, signal, track) {
   const ids = [];
   let count;
   // Page through the results; the first request also tells us the total count (even if retmax is 0).
@@ -83,7 +84,7 @@ async function esearch(term, retmax, signal) {
       retstart: String(ids.length),
       retmax: String(Math.min(ESEARCH_PAGE, retmax - ids.length)),
     });
-    const { data } = await ncbiGet(`${EUTILS}/esearch.fcgi?${params}`, signal);
+    const { data } = await ncbiGet(`${EUTILS}/esearch.fcgi?${params}`, signal, track);
     count = Number(data.esearchresult.count);
     if (data.esearchresult.idlist.length === 0) break;
     ids.push(...data.esearchresult.idlist);
@@ -92,7 +93,7 @@ async function esearch(term, retmax, signal) {
 }
 
 // Fetches esummary records for a list of ids, in batches, reporting progress after each batch.
-async function esummaryAll(ids, signal, onProgress) {
+async function esummaryAll(ids, signal, onProgress, track) {
   const records = [];
   onProgress?.({ loaded: 0, total: ids.length });
   for (let i = 0; i < ids.length; i += BATCH_SIZE) {
@@ -101,7 +102,7 @@ async function esummaryAll(ids, signal, onProgress) {
       retmode: 'json',
       id: ids.slice(i, i + BATCH_SIZE).join(','),
     });
-    const { data } = await ncbiGet(`${EUTILS}/esummary.fcgi?${params}`, signal);
+    const { data } = await ncbiGet(`${EUTILS}/esummary.fcgi?${params}`, signal, track);
     for (const uid of data.result.uids) records.push(data.result[uid]);
     onProgress?.({ loaded: Math.min(i + BATCH_SIZE, ids.length), total: ids.length });
   }
@@ -175,16 +176,26 @@ export async function fetchClinvar(
   if (!isValidGeneSymbol(gene)) throw new TypeError('Invalid gene symbol.');
   const missense = `${gene}[gene] AND "missense variant"[molecular consequence]`;
 
-  const confident = await esearch(`${missense} AND ${CONFIDENT_CLASSES}`, maxVariants, signal);
+  // Every data reply is recorded so we can report how fresh the data is (cached? offline?).
+  const replies = [];
+  const track = (reply) => replies.push(reply);
+
+  const confident = await esearch(
+    `${missense} AND ${CONFIDENT_CLASSES}`,
+    maxVariants,
+    signal,
+    track,
+  );
   const rest = await esearch(
     `${missense} NOT ${CONFIDENT_CLASSES}`,
     Math.max(0, maxVariants - confident.ids.length),
     signal,
+    track,
   );
   const ids = [...confident.ids, ...rest.ids];
   const totalAvailable = confident.count + rest.count;
 
-  const records = await esummaryAll(ids, signal, onProgress);
+  const records = await esummaryAll(ids, signal, onProgress, track);
   const variants = [];
   const dropped = new Map();
   for (const record of records) {
@@ -217,6 +228,9 @@ export async function fetchClinvar(
       // false when the non-missense explanation could not be fetched: total is then a lower bound
       complete: breakdown !== null,
     },
-    fetchedAt: Date.now(),
+    // Freshness of the data: the oldest reply decides the age; any offline reply means offline.
+    fetchedAt: replies.length ? Math.min(...replies.map((r) => r.fetchedAt)) : Date.now(),
+    fromCache: replies.length > 0 && replies.every((r) => r.fromCache),
+    offline: replies.some((r) => r.offline),
   };
 }

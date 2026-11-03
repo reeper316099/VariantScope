@@ -28,7 +28,9 @@ export async function fetchUniprot(symbol, { signal } = {}) {
     format: 'json',
     size: '5',
   });
-  const { data, fetchedAt, fromCache } = await getJson(`${SEARCH_URL}?${params}`, { signal });
+  const { data, fetchedAt, fromCache, offline } = await getJson(`${SEARCH_URL}?${params}`, {
+    signal,
+  });
 
   const hits = data.results ?? [];
   if (hits.length === 0) throw new GeneNotFoundError(symbol, 'UniProt');
@@ -47,5 +49,6 @@ export async function fetchUniprot(symbol, { signal } = {}) {
     otherAccessions: hits.filter((h) => h !== hit).map((h) => h.primaryAccession),
     fetchedAt,
     fromCache,
+    offline,
   };
 }

@@ -54,6 +54,8 @@ async function requestOnce(url, { method, body }, userAgent) {
     body,
     // Redirects are refused so a response can never send us to a host outside the allowlist.
     redirect: 'error',
+    // Our own disk cache is the only cache: Chromium's HTTP cache would hide how old data is.
+    cache: 'no-store',
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   return { status: res.status, text: await readCapped(res) };

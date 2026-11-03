@@ -4,6 +4,8 @@ import { cacheGet, cacheSet } from '../core/cache.js';
 // Applies "light" or "dark" to the <html> element.
 function apply(theme) {
   document.documentElement.dataset.theme = theme;
+  // Canvases (3D view, plot) read colours from CSS, so they redraw when this fires.
+  window.dispatchEvent(new CustomEvent('vs:theme', { detail: theme }));
 }
 
 // Returns the saved theme, else the system preference.

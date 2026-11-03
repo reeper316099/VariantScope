@@ -73,7 +73,7 @@ describe('loadGene', () => {
   it('partial: gnomAD failure still shows ClinVar + structure, rarity "unknown" (not "absent")', async () => {
     fetchGnomadVariants.mockRejectedValue(new Error('gnomAD down'));
     const r = await loadGene('gene1');
-    expect(r.gnomadVariants).toEqual({ status: 'failed', error: 'gnomAD down' });
+    expect(r.gnomadVariants).toEqual({ status: 'failed', error: 'gnomAD down', kind: null });
     expect(r.clinvar.status).toBe('ok');
     expect(r.variants[0].rarity).toBe('unknown');
     expect(r.variants[0].plddt).toBe(95);

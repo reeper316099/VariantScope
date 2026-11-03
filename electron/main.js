@@ -24,6 +24,12 @@ const TRUSTED_ORIGIN = DEV_URL ? originOf(DEV_URL) : APP_ORIGIN;
 // Tests can point the app at a throwaway data folder (must run before the app is ready).
 if (process.env.VARIANTSCOPE_USER_DATA) app.setPath('userData', process.env.VARIANTSCOPE_USER_DATA);
 
+// Background mode (automated tests only): the window is invisible, click-through and never takes
+// focus, and on macOS the app has no Dock icon, so a test run cannot interrupt the person using
+// the computer. It is off unless VARIANTSCOPE_BACKGROUND=1 is set.
+const BACKGROUND = process.env.VARIANTSCOPE_BACKGROUND === '1';
+if (BACKGROUND && process.platform === 'darwin') app.setActivationPolicy('accessory');
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -71,11 +77,12 @@ function installDevCsp() {
   });
 }
 
-// Denies every permission request (camera, geolocation, notifications, ...) by default.
+// Denies every permission request (camera, geolocation, notifications, ...) except fullscreen
+// for our own page, which the 3D viewer's Fullscreen button needs.
 function denyPermissions() {
-  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) =>
-    callback(false),
-  );
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) => {
+    callback(permission === 'fullscreen' && originOf(details.requestingUrl) === TRUSTED_ORIGIN);
+  });
   session.defaultSession.setPermissionCheckHandler(() => false);
 }
 
@@ -192,7 +199,9 @@ async function createWindow() {
     minWidth: 1000,
     minHeight: 700,
     show: false,
+    focusable: !BACKGROUND,
     title: 'VariantScope',
+    icon: path.join(ROOT, 'build', 'icon.png'),
     webPreferences: {
       preload: path.join(import.meta.dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -203,7 +212,12 @@ async function createWindow() {
     },
   });
   if (state.maximized) mainWindow.maximize();
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.once('ready-to-show', () => {
+    if (!BACKGROUND) return mainWindow.show();
+    mainWindow.setOpacity(0); // fully transparent but still painted, so screenshots and WebGL work
+    mainWindow.setIgnoreMouseEvents(true);
+    mainWindow.showInactive();
+  });
   mainWindow.on('close', () => store.save(mainWindow));
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -223,7 +237,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('web-contents-created', (_event, contents) => lockDownWebContents(contents));
 
   app.whenReady().then(async () => {
-    cache = createDiskCache(path.join(app.getPath('userData'), 'cache'));
+    cache = createDiskCache(path.join(app.getPath('userData'), 'api-cache'));
     fetchJson = createFetcher({
       cache,
       userAgent: `VariantScope/${app.getVersion()} (+https://github.com/reeper316099/VariantScope)`,

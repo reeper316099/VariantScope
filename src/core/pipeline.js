@@ -14,7 +14,11 @@ async function settle(task) {
     return { status: 'ok', value: await task() };
   } catch (err) {
     if (err instanceof HttpError && err.kind === 'aborted') throw err;
-    return { status: 'failed', error: err instanceof Error ? err.message : String(err) };
+    return {
+      status: 'failed',
+      error: err instanceof Error ? err.message : String(err),
+      kind: err.kind ?? null,
+    };
   }
 }
 
@@ -57,6 +61,7 @@ export async function loadGene(symbol, { signal, onProgress, maxVariants } = {})
     summary = summarize(variants, { skippedCount: clinvar.value.skipped.total });
   }
 
+  const provenance = buildProvenance({ uniprot, alphafold, clinvar, gnomadVariants, constraint });
   return {
     gene: uniprot,
     alphafold,
@@ -66,5 +71,52 @@ export async function loadGene(symbol, { signal, onProgress, maxVariants } = {})
     variants,
     numbering,
     summary,
+    provenance,
+    freshness: summarizeFreshness(provenance),
+  };
+}
+
+// Lists where each piece of data came from and when it was fetched (for the About box).
+function buildProvenance({ uniprot, alphafold, clinvar, gnomadVariants, constraint }) {
+  const entries = [{ source: 'UniProt', detail: uniprot.accession, ...pickMeta(uniprot) }];
+  if (alphafold.status === 'ok' && alphafold.value) {
+    const { entryId, modelVersion } = alphafold.value;
+    entries.push({
+      source: 'AlphaFold DB',
+      detail: `${entryId}, model v${modelVersion}`,
+      ...pickMeta(alphafold.value),
+    });
+  }
+  if (clinvar.status === 'ok')
+    entries.push({ source: 'ClinVar', detail: 'NCBI E-utilities', ...pickMeta(clinvar.value) });
+  if (gnomadVariants.status === 'ok') {
+    const { datasetId, referenceGenome } = gnomadVariants.value;
+    entries.push({
+      source: 'gnomAD',
+      detail: `${datasetId}, ${referenceGenome}`,
+      ...pickMeta(gnomadVariants.value),
+    });
+  }
+  if (constraint.status === 'ok' && constraint.value) {
+    entries.push({
+      source: 'gnomAD constraint',
+      detail: 'gene-level scores',
+      ...pickMeta(constraint.value),
+    });
+  }
+  return entries;
+}
+
+// Keeps only the freshness fields of a source result.
+function pickMeta({ fetchedAt, fromCache, offline }) {
+  return { fetchedAt, fromCache: Boolean(fromCache), offline: Boolean(offline) };
+}
+
+// Overall freshness: the oldest fetch time; "cached" only if every source came from the cache.
+function summarizeFreshness(provenance) {
+  return {
+    fetchedAt: Math.min(...provenance.map((p) => p.fetchedAt)),
+    fromCache: provenance.every((p) => p.fromCache),
+    offline: provenance.some((p) => p.offline),
   };
 }

@@ -46,5 +46,6 @@ export async function fetchAlphaFold(accession, { signal } = {}) {
     sequence: entry.uniprotSequence,
     fetchedAt: pdb.fetchedAt,
     fromCache: pdb.fromCache,
+    offline: pdb.offline,
   };
 }
