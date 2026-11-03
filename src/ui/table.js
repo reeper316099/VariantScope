@@ -95,6 +95,17 @@ export function createVariantTable(root, { onSelect, onExport }) {
     ...RARITY_LABELS.map((r) => chip(state.rarities, r, r)),
   );
 
+  // Clears the text filter and the classification/rarity chips (used to reveal a hidden selection).
+  function clearFilters() {
+    state.text = '';
+    state.classes.clear();
+    state.rarities.clear();
+    search.value = '';
+    for (const chipButton of filterRow.querySelectorAll('.chip'))
+      chipButton.setAttribute('aria-pressed', 'false');
+    visible = sortVariants(filterVariants(state.variants, state), state.sortKey, state.sortDir);
+  }
+
   // Renders the header, current page of rows and pager.
   function render() {
     visible = sortVariants(filterVariants(state.variants, state), state.sortKey, state.sortDir);
@@ -224,9 +235,12 @@ export function createVariantTable(root, { onSelect, onExport }) {
       render();
     },
     // Highlights the selected row, switching to the page that contains it and scrolling to it.
+    // If the filters are hiding that variant, they are cleared so the selection is never invisible.
     select(variantId) {
       state.selectedId = variantId;
       if (variantId) {
+        const known = state.variants.some((v) => v.clinvarId === variantId);
+        if (known && pageOfVariant(visible, variantId) === 0) clearFilters();
         const page = pageOfVariant(visible, variantId);
         if (page) state.page = page;
       }

@@ -261,8 +261,22 @@ export function createLollipop(canvas, { onSelect }) {
       state.showUncertain = show;
       rebuild();
     },
+    // Canvas pixel position of a variant's lollipop head, or null if it is not drawn.
+    pointPixel(variantId) {
+      for (let i = 0; i < chart.data.datasets.length; i++) {
+        const index = chart.data.datasets[i].data.findIndex(
+          (d) => d.variant.clinvarId === variantId,
+        );
+        if (index !== -1) {
+          const { x, y } = chart.getDatasetMeta(i).data[index];
+          return { x, y };
+        }
+      }
+      return null;
+    },
     // Highlights the selected variant with a ring.
     select(variantId) {
+      canvas.dataset.selectedId = variantId ?? '';
       state.selectedId = variantId;
       chart.draw();
     },

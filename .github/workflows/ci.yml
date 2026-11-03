@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Lint, format, unit tests with coverage, the web build, and the browser end-to-end tests.
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npx prettier --check .
+      - run: npx vitest run --coverage --coverage.reporter=text-summary
+      - run: npm run build:web
+      - run: npx playwright install --with-deps chromium
+      # The e2e tests use the live public APIs. The screenshot spec only refreshes README images.
+      - run: npx playwright test --project=web --grep-invert screenshot
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-results
+          path: test-results/
+          if-no-files-found: ignore
+
+  # Packages the desktop app (no installers, no publishing) on all three systems, so a packaging
+  # problem shows up in a pull request instead of at release time.
+  package-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:electron
+      - run: npx electron-builder --dir --publish never
+
+  # Best effort: runs the desktop app's end-to-end tests on Linux under a virtual display.
+  # Not required to pass yet (it has not been run on CI before); remove continue-on-error once green.
+  electron-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install-deps chromium
+      # Electron's Linux sandbox helper must be root-owned and setuid, and Ubuntu 24.04 restricts
+      # unprivileged user namespaces; both are standard Electron-on-CI setup steps.
+      - run: |
+          sudo chown root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      - run: npm run build:electron
+      - run: xvfb-run --auto-servernum npx playwright test --project=electron
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: electron-e2e-results
+          path: test-results/
+          if-no-files-found: ignore

@@ -1,0 +1,63 @@
+# electron-builder configuration. Installers are UNSIGNED (see README, "Unsigned apps").
+appId: com.reeper316099.variantscope
+productName: VariantScope
+copyright: Copyright © 2026 reeper316099
+
+directories:
+  output: release
+  buildResources: build
+
+# Only the main process code and the built UI go in the app. 3Dmol and Chart.js are bundled into
+# dist/electron-renderer by Vite, so no node_modules folder is shipped.
+files:
+  - electron/**/*
+  - dist/electron-renderer/**/*
+  - build/icon.png
+  - package.json
+asar: true
+
+# One file name pattern for everything that is not overridden below.
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
+# GitHub Releases. Releases are created as drafts, and the release workflow publishes them
+# once every platform has uploaded its files.
+publish:
+  provider: github
+  owner: reeper316099
+  repo: VariantScope
+  releaseType: draft
+
+mac:
+  category: public.app-category.education
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  identity: null # electron-builder does no signing; scripts/adhoc-sign.cjs adds an ad-hoc signature
+  # No Apple Developer certificate: the app is not notarized (see README, "Unsigned apps").
+
+afterPack: scripts/adhoc-sign.cjs
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+
+nsis:
+  artifactName: ${productName}-Setup-${version}-${os}-${arch}.${ext}
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+portable:
+  artifactName: ${productName}-Portable-${version}-${os}-${arch}.${ext}
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  category: Science
+  synopsis: Gene variant explorer (AlphaFold, ClinVar, gnomAD)
+  maintainer: reeper316099 <reeper316099@users.noreply.github.com>

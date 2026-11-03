@@ -27,7 +27,7 @@ export default [
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
-      globals: { ...globals.browser, __APP_VERSION__: 'readonly' },
+      globals: { ...globals.browser, __APP_VERSION__: 'readonly', __E2E__: 'readonly' },
     },
     rules: securityRules,
   },
@@ -36,6 +36,11 @@ export default [
     files: ['electron/**/*.js', 'scripts/**/*.mjs', '*.config.js', 'tests/**/*.js'],
     languageOptions: { ecmaVersion: 2023, sourceType: 'module', globals: globals.node },
     rules: securityRules,
+  },
+  // End-to-end tests run in Node but also contain code that runs inside the page (page.evaluate).
+  {
+    files: ['tests/e2e/**/*.js'],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
   // The preload script must be CommonJS because it runs sandboxed.
   {

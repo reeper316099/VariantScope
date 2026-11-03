@@ -46,11 +46,15 @@ export default defineConfig(({ mode }) => {
     root: 'src',
     // Electron serves files from its own app:// protocol; Pages needs the repo-name subpath.
     base: isElectron ? './' : (process.env.VITE_BASE ?? '/'),
-    define: { __APP_VERSION__: JSON.stringify(version) },
+    define: { __APP_VERSION__: JSON.stringify(version), __E2E__: JSON.stringify(mode === 'e2e') },
     plugins: [noEvalPlugin(), cspPlugin(isElectron)],
     server: { port: 5173, strictPort: true },
     build: {
-      outDir: isElectron ? '../dist/electron-renderer' : '../dist/web',
+      outDir: isElectron
+        ? '../dist/electron-renderer'
+        : mode === 'e2e'
+          ? '../dist/e2e'
+          : '../dist/web',
       emptyOutDir: true,
       target: 'es2022',
     },

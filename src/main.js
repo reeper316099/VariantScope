@@ -297,6 +297,21 @@ async function renderStructure(result) {
   }
 }
 
+// Read-only handles for the end-to-end tests. __E2E__ is true only in the special "e2e" build,
+// so the real web and desktop builds contain none of this.
+if (__E2E__) {
+  window.__vsTest = {
+    plot,
+    table,
+    get viewer() {
+      return app.viewer;
+    },
+    get result() {
+      return app.result;
+    },
+  };
+}
+
 // ---------- Selection sync: 3D view, plot and table always agree ----------
 
 selection.subscribe((id) => {

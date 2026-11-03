@@ -1,0 +1,100 @@
+name: Release
+
+# Pushing a tag like v0.1.0 builds installers on Windows, macOS and Linux and publishes a GitHub
+# Release. Running it by hand (Actions tab -> Release -> Run workflow) is a DRY RUN: it builds
+# everything and keeps the installers as workflow artifacts, but publishes nothing.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+# The built-in GITHUB_TOKEN only needs to write releases.
+permissions:
+  contents: write
+
+jobs:
+  # Creates the draft release once, before the parallel builds start, so they cannot race to
+  # create duplicates. Skipped on dry runs.
+  draft:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check that the tag matches package.json
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version v$VERSION"
+            exit 1
+          fi
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
+            --title "VariantScope $GITHUB_REF_NAME" \
+            --notes "See CHANGELOG.md for what is new. Installers are not code-signed: see the README section 'Unsigned apps' for how to open them."
+
+  build:
+    needs: draft
+    # Run on dry runs (draft is skipped) and after a successful draft, but not if draft failed.
+    if: ${{ !cancelled() && (needs.draft.result == 'success' || needs.draft.result == 'skipped') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build:electron
+      - name: Build installers (and upload them to the draft release on tag pushes)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then PUBLISH=always; else PUBLISH=never; fi
+          npx electron-builder --publish "$PUBLISH"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installers-${{ matrix.os }}
+          path: |
+            release/*.dmg
+            release/*.exe
+            release/*.AppImage
+            release/*.deb
+          if-no-files-found: error
+
+  # Adds SHA256SUMS.txt and publishes the draft, only when every platform succeeded.
+  publish:
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: installers
+          merge-multiple: true
+      - name: Publish the release with checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd installers
+          ls -l
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          # Look the draft up by tag through the API (draft releases are not found by tag name).
+          ID="$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
+            --jq ".[] | select(.tag_name==\"$GITHUB_REF_NAME\" and .draft) | .id" | head -n 1)"
+          test -n "$ID"
+          gh api --method POST \
+            "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$ID/assets?name=SHA256SUMS.txt" \
+            -H "Content-Type: text/plain" --input SHA256SUMS.txt
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$ID" -F draft=false

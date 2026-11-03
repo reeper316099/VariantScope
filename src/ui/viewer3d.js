@@ -129,32 +129,36 @@ export async function createStructureViewer(container, { onSelect }) {
     );
   };
 
-  viewer.setClickable({ atom: 'CA' }, true, (atom) => {
-    if (!isVisibleResidue(atom.resi)) return;
-    const variant = representative(atom.resi);
-    if (variant) onSelect(variant.clinvarId);
-  });
-  viewer.setHoverable(
-    { atom: 'CA' },
-    true,
-    (atom, _viewer, event) => {
-      tooltip.replaceChildren(
-        ...describeResidue(atom).map((line) =>
-          Object.assign(document.createElement('div'), { textContent: line }),
-        ),
-      );
-      const box = container.getBoundingClientRect();
-      tooltip.style.setProperty(
-        'left',
-        `${Math.min(event.clientX - box.left + 12, box.width - 220)}px`,
-      );
-      tooltip.style.setProperty('top', `${event.clientY - box.top + 12}px`);
-      tooltip.hidden = false;
-    },
-    () => {
-      tooltip.hidden = true;
-    },
-  );
+  // Makes C-alpha atoms clickable/hoverable. 3Dmol flags the atoms that exist when this is called,
+  // so it must run AFTER a model is loaded (calling it earlier flags nothing).
+  const registerPicking = () => {
+    viewer.setClickable({ atom: 'CA' }, true, (atom) => {
+      if (!isVisibleResidue(atom.resi)) return;
+      const variant = representative(atom.resi);
+      if (variant) onSelect(variant.clinvarId);
+    });
+    viewer.setHoverable(
+      { atom: 'CA' },
+      true,
+      (atom, _viewer, event) => {
+        tooltip.replaceChildren(
+          ...describeResidue(atom).map((line) =>
+            Object.assign(document.createElement('div'), { textContent: line }),
+          ),
+        );
+        const box = container.getBoundingClientRect();
+        tooltip.style.setProperty(
+          'left',
+          `${Math.min(event.clientX - box.left + 12, box.width - 220)}px`,
+        );
+        tooltip.style.setProperty('top', `${event.clientY - box.top + 12}px`);
+        tooltip.hidden = false;
+      },
+      () => {
+        tooltip.hidden = true;
+      },
+    );
+  };
 
   const resizeObserver = new ResizeObserver(() => viewer.resize());
   resizeObserver.observe(container);
@@ -171,6 +175,7 @@ export async function createStructureViewer(container, { onSelect }) {
     load({ pdbText, variants, plddt, length }) {
       viewer.clear();
       viewer.addModel(pdbText, 'pdb');
+      registerPicking();
       state.variants = variants;
       state.byResidue = new Map();
       for (const v of variants)
@@ -204,12 +209,34 @@ export async function createStructureViewer(container, { onSelect }) {
       restyle();
     },
 
+    // Looks up the C-alpha atom of a residue in the loaded model ({resn, resi}) or null.
+    residueAt(position) {
+      const atom = viewer.selectedAtoms({ resi: [position], atom: 'CA' })[0];
+      return atom ? { resn: atom.resn, resi: atom.resi } : null;
+    },
+
+    // Where a residue's sphere is on screen, in CSS pixels relative to the viewer container.
+    // 3Dmol's modelToScreen returns page coordinates, so the container's page offset is removed.
+    screenPoint(position) {
+      const atom = viewer.selectedAtoms({ resi: [position], atom: 'CA' })[0];
+      if (!atom) return null;
+      const [point] = viewer.modelToScreen([{ x: atom.x, y: atom.y, z: atom.z }]);
+      const box = container.getBoundingClientRect();
+      return {
+        x: point.x - (box.left + window.pageXOffset),
+        y: point.y - (box.top + window.pageYOffset),
+      };
+    },
+
     // Highlights a variant (or clears with null), shows its label and smoothly zooms to it.
     select(variantId) {
       state.selectedId = variantId;
       if (state.label) viewer.removeLabel(state.label);
       state.label = null;
       const variant = state.variants.find((v) => v.clinvarId === variantId);
+      // Publish which residue of the model is highlighted (e.g. "ARG175"), for tests and screen readers.
+      const residue = variant ? this.residueAt(variant.position) : null;
+      container.dataset.selectedResidue = residue ? `${residue.resn}${residue.resi}` : '';
       restyle();
       if (!variant) return;
       state.label = viewer.addLabel(
