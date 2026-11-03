@@ -14,9 +14,15 @@ const userData = mkdtempSync(path.join(tmpdir(), 'vs-e2e-ud-'));
 const SCREENSHOTS = path.join(ROOT, 'docs', 'screenshots');
 
 // Launches the app against the shared user-data folder (extra = Chromium switches).
+// CI machines have no GPU, so Linux gets software WebGL (the same flags the browser tests use).
+const SOFTWARE_WEBGL =
+  process.platform === 'linux'
+    ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist']
+    : [];
+
 const launch = (extra = []) =>
   electron.launch({
-    args: [ROOT, ...extra],
+    args: [ROOT, ...SOFTWARE_WEBGL, ...extra],
     env: { ...process.env, VARIANTSCOPE_USER_DATA: userData, VARIANTSCOPE_BACKGROUND: '1' },
     timeout: 30_000,
   });
@@ -404,7 +410,11 @@ test.describe.serial('Electron offline mode', () => {
   const launchOffline = (offline) =>
     electron.launch({
       // The DNS switch makes every host unresolvable, like a dead connection, for the main process too.
-      args: [ROOT, ...(offline ? ['--host-resolver-rules=MAP * ~NOTFOUND'] : [])],
+      args: [
+        ROOT,
+        ...SOFTWARE_WEBGL,
+        ...(offline ? ['--host-resolver-rules=MAP * ~NOTFOUND'] : []),
+      ],
       env: { ...process.env, VARIANTSCOPE_USER_DATA: offlineData, VARIANTSCOPE_BACKGROUND: '1' },
       timeout: 30_000,
     });
