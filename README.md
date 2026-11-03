@@ -1,19 +1,124 @@
 # VariantScope
 
-A gene variant explorer for learning. Type a human gene symbol (for example `BRCA1`, `TP53`, `CFTR` or `MLH1`) and see the AlphaFold 3D structure of the protein, the ClinVar variants mapped onto it, how rare those variants are in gnomAD, and gene-level constraint scores, all in one view.
+**Where in a protein do disease-causing changes cluster, is that region confidently structured, and are those changes almost never seen in healthy people?**
 
-> **Educational use only. Not medical advice.**
+VariantScope answers that for any human gene. Type a gene symbol (try `BRCA1`, `TP53`, `CFTR` or `MLH1`) and see, in one view, the AlphaFold 3D structure coloured by prediction confidence, the ClinVar variants mapped onto it, how rare each variant is in gnomAD, and gene-level constraint scores. It ships three ways from one codebase: a desktop app (Windows, macOS, Linux), a web version, and source you can run yourself.
 
-The README is still being written. This section covers installing the desktop app and what has been tested.
+> **Educational use only. Not medical advice.** VariantScope shows public research data. It cannot tell you whether any variant causes disease in any person.
 
-## Download
+![TP53 in the desktop app: 3D structure with the R175H hotspot selected, summary cards, plot and table](docs/screenshots/electron-TP53.png)
 
-- **Desktop app (Windows, macOS, Linux):** [GitHub Releases](https://github.com/reeper316099/VariantScope/releases)
-- **Web version:** https://reeper316099.github.io/VariantScope/
+<details>
+<summary>More screenshots (dark mode, BRCA1, mobile)</summary>
+
+| BRCA1, dark mode                                               | TP53, mobile (390 px wide)                           |
+| -------------------------------------------------------------- | ---------------------------------------------------- |
+| ![BRCA1 in dark mode](docs/screenshots/BRCA1-desktop-dark.png) | ![TP53 on a phone](docs/screenshots/TP53-mobile.png) |
+
+Also in [`docs/screenshots/`](docs/screenshots/): light and dark desktop, mobile and desktop-app screenshots for both BRCA1 and TP53.
+
+</details>
+
+## Download and try it
+
+- **Desktop app (Windows, macOS, Linux):** [GitHub Releases](https://github.com/reeper316099/VariantScope/releases). The installers are unsigned, so read [Unsigned apps](#unsigned-apps-what-you-will-see) first.
+- **Live demo (web):** https://reeper316099.github.io/VariantScope/
+- **Source:** `git clone https://github.com/reeper316099/VariantScope.git`, then see [Run it yourself](#run-it-yourself).
+
+The web version talks to the public APIs straight from your browser. If a source cannot be reached from the browser, it says so and suggests the desktop app.
+
+## How to read the screen
+
+- **3D structure.** The ribbon is coloured by AlphaFold's confidence score, pLDDT: dark blue (> 90, very high), light blue (70 to 90, confident), yellow (50 to 70, low), orange (< 50, very low). Red spheres are pathogenic or likely pathogenic ClinVar variants. Benign (green) and VUS (gray) spheres are optional.
+- **Plot.** Each lollipop is a variant at its residue. Height is `-log10(gnomAD allele frequency)`, capped, so a tall stem means rare. **Variants not found in gnomAD get the full height.** Pathogenic is above the line, benign below. The strip under the axis is pLDDT again.
+- **Table.** Every variant with ClinVar's classification and review status, gnomAD frequency and rarity, pLDDT and how it was matched. Sort, filter, export CSV.
+- **Summary cards.** How many variants were analysed, what share are pathogenic, what share of those sit in confidently-predicted regions, and what share are absent or ultra-rare in gnomAD. A "skipped" card explains what was not plotted and why.
+- **What this means.** Plain sentences built only from the computed numbers, stating the thresholds used.
+- Selecting a variant in the 3D view, the plot or the table highlights it in all three.
+
+## How it works
+
+```text
+you type "TP53"
+      |
+      v
+src/ui/search.js --> src/core/pipeline.js   loadGene(): one source failing never blocks the rest
+                        1. uniprot.js     gene symbol -> accession + the reference sequence (all numbering)
+                        2. at the same time:
+                             alphafold.js   structure (PDB) + pLDDT from the B-factor column
+                             clinvar.js     missense variants, classification, review status
+                             gnomad.js      allele frequencies + gene constraint
+                        |
+   every request goes through ONE function: src/core/http.js  getJson()
+                        |
+        +---------------+--------------------------------+
+        | Desktop app (Electron)                         | Web version (browser)
+        | window.api.fetchJson  --IPC-->  main process   | plain fetch() + localStorage cache
+        |   electron/fetcher.js: host allowlist,         |   (7 day TTL, in-memory fallback)
+        |   https only, 20 s timeout, 1 retry,           |
+        |   25 MB cap, per-host rate limit,              |
+        |   7 day disk cache in the user data folder     |
+        +---------------+--------------------------------+
+                        |
+                        v
+   parse.js  ->  join.js (ClinVar <-> gnomAD + numbering check)  ->  stats.js
+                        |
+                        v
+   viewer3d.js (3Dmol) . lollipop.js (Chart.js) . table.js . cards.js
+   selection.js keeps all three views in sync
+```
+
+The adapter is the key design choice. Nothing outside `http.js` knows whether it is running in Electron or a browser. In the desktop app the **main process** does the fetching, which avoids browser CORS limits, lets one place enforce NCBI's 3 requests per second, caches to disk so the app works offline, and means the web page itself never needs network access (its Content-Security-Policy forbids it).
+
+## Data sources
+
+All data comes straight from public APIs. There are no API keys, no paid services and no backend server. Nothing is invented: missing data is shown as "not available".
+
+| Source                                                  | What it provides                                                                                                           | Endpoint used                                    | Accessed   |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ---------- |
+| [UniProt](https://www.uniprot.org/)                     | Gene to accession, protein name, the **reference sequence** used for all residue numbers (reviewed human entries only)     | `rest.uniprot.org/uniprotkb/search`              | 2 Nov 2026 |
+| [AlphaFold DB](https://alphafold.ebi.ac.uk/)            | Predicted 3D structure and per-residue pLDDT (model version 6 at the time of access, taken from the API, never hard-coded) | `alphafold.ebi.ac.uk/api/prediction/{accession}` | 2 Nov 2026 |
+| [ClinVar](https://www.ncbi.nlm.nih.gov/clinvar/) (NCBI) | Variants with germline classification and review status                                                                    | NCBI E-utilities `esearch` + `esummary`          | 2 Nov 2026 |
+| [gnomAD](https://gnomad.broadinstitute.org/)            | Allele frequencies and gene constraint (dataset `gnomad_r4`, GRCh38)                                                       | `gnomad.broadinstitute.org/api` (GraphQL)        | 2 Nov 2026 |
+
+Every response is shown with when it was fetched (and "cached N days ago" if it came from the cache). The About box lists the exact data versions used for the gene on screen.
+
+## Joining ClinVar to gnomAD, and its limits
+
+This is the hardest part, because the two databases describe the same variant differently.
+
+1. **Coordinates first.** ClinVar gives a genomic position and the changed bases (GRCh38). gnomAD identifies variants as `chromosome-position-ref-alt`. When ClinVar has coordinates, that exact key is used. If gnomAD has no such variant, the variant is reported as **not found in gnomAD** (very rare), with no guessing.
+2. **Protein-change fallback, but only when it is safe.** If ClinVar has no coordinates, the protein change (for example `R175H`, with three-letter and one-letter codes and transcript prefixes normalised) is used, **only if exactly one** gnomAD variant has that change. The reason: different DNA changes can give the same amino-acid change, and attaching the wrong one's frequency would be a silent error. When the test data was analysed, this affected 136 BRCA1, 51 TP53 and 48 CFTR variants that have coordinates but no gnomAD match, yet share an amino-acid change with a _different_ gnomAD variant.
+3. **Honest outcomes.** Every joined row records `matchedBy`: `coordinates`, `protein-change` or none. "Not found in gnomAD" is never mixed up with "the gnomAD query failed" (the latter gives rarity `unknown`). A variant gnomAD lists with zero observed alleles counts as not found.
+4. **Frequencies** use gnomAD's _joint_ exome and genome counts, which already handle samples that appear in both.
+
+**Numbering check.** ClinVar and gnomAD number residues on a specific transcript (often MANE Select), while UniProt's canonical protein may differ. For every variant the app checks that the reference amino acid really is at that position in the UniProt sequence. Mismatching variants are never drawn on the structure and are listed separately in the table, and a prominent warning appears if fewer than 95% match. In testing on 2 Nov 2026 the match rate was **100%** for BRCA1, TP53, CFTR and MLH1.
+
+**Limits to keep in mind**
+
+- Only single-residue **missense** changes are plotted. Frameshift, nonsense, splice, in-frame and non-coding records are counted in the "skipped" card but not drawn.
+- For large genes only **1,500** variants are loaded (pathogenic, likely pathogenic, benign and likely benign first), so VUS and conflicting records are under-represented. The app shows how many exist and how many were loaded.
+- ClinVar labels are mapped to six classes: "Pathogenic/Likely pathogenic" shows as Pathogenic, "Benign/Likely benign" as Benign. The original ClinVar wording is always shown beside it. Records without a usable germline classification (for example "not provided" or "drug response") are not plotted.
+- ClinVar review quality varies, a VUS means "variant of uncertain significance", and AlphaFold predicts structure (a prediction, not experimental proof). gnomAD reflects the people sampled, not everyone.
+
+## Rarity thresholds
+
+Defined at the top of [`src/core/stats.js`](src/core/stats.js) and shown in the app.
+
+| Bucket        | Rule (gnomAD allele frequency, AF)                                            |
+| ------------- | ----------------------------------------------------------------------------- |
+| absent        | not found in gnomAD (or zero observed alleles)                                |
+| ultra-rare    | AF < 1e-5                                                                     |
+| rare          | AF < 1e-4                                                                     |
+| low-frequency | AF < 1e-2                                                                     |
+| common        | AF >= 1e-2                                                                    |
+| unknown       | frequency could not be determined (gnomAD failed, or the match was ambiguous) |
+
+Other thresholds: a region counts as "confidently predicted" at pLDDT >= 70; the density colouring counts pathogenic variants within 10 residues either side; numbering is flagged below 95% matching.
 
 ## Unsigned apps: what you will see
 
-The installers are **not code-signed or notarized**. That needs paid developer accounts (Apple Developer Program, a Windows code-signing certificate), which this project does not have. The apps are safe to open if you downloaded them from this repository's Releases page, but your operating system will warn you the first time. You can check a download against `SHA256SUMS.txt` on the same release page (see below).
+The installers are **not code-signed or notarized**. That needs paid developer accounts (Apple Developer Program, a Windows code-signing certificate), which this project does not have. The apps are safe to open if you downloaded them from this repository's Releases page, but your operating system will warn you the first time. You can check a download against `SHA256SUMS.txt` on the same release page.
 
 ### Windows (SmartScreen)
 
@@ -63,39 +168,112 @@ shasum -a 256 -c SHA256SUMS.txt --ignore-missing      # macOS and Linux
 Get-FileHash .\VariantScope-Setup-*.exe -Algorithm SHA256   # Windows: compare with the file
 ```
 
-Code signing, notarization and auto-update are on the [stretch list](#stretch-goals), not part of this version.
+## Run it yourself
 
-## What has been tested
-
-"Tested locally" means it was run on the developer's Mac. Anything else is verified only when GitHub Actions runs it, and is marked clearly until a real run passes.
-
-| Target                                       | Status                                                                                                        |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Web version in a browser (Chrome)            | Tested locally: end-to-end tests pass against the live public APIs                                            |
-| Desktop app in development (macOS)           | Tested locally: end-to-end tests pass                                                                         |
-| **macOS Apple Silicon (arm64) packaged app** | Tested locally: built, ad-hoc signed (verified), DMG mounted, packaged app launched and loaded a gene         |
-| macOS Intel (x64) `.dmg`                     | **UNTESTED LOCALLY, verified only by CI**                                                                     |
-| Windows installer and portable `.exe`        | **UNTESTED LOCALLY, verified only by CI**                                                                     |
-| Linux `.AppImage` and `.deb`                 | **UNTESTED LOCALLY, verified only by CI**                                                                     |
-| GitHub Pages deployment                      | Subpath build tested locally in a browser; the deployment itself is **UNTESTED LOCALLY, verified only by CI** |
-| Release workflow (tag to published release)  | **UNTESTED LOCALLY, verified only by CI**                                                                     |
-
-## Build installers yourself
+You need [Node.js](https://nodejs.org/) 22.13 or newer.
 
 ```bash
+git clone https://github.com/reeper316099/VariantScope.git
+cd VariantScope
 npm ci
-npm run dist          # builds installers for the system you are on, into release/
 ```
 
-Requirements: Node.js 22.13 or newer. Building the macOS or Windows installers needs that operating system (or a CI runner).
+**In the browser (development):**
 
-If your project folder is inside **iCloud Drive** (for example `~/Desktop` with Desktop & Documents sync on), macOS code signing can fail with "resource fork, Finder information, or similar detritus not allowed", because iCloud keeps adding file metadata. Build outside the synced folder:
+```bash
+npm run dev
+```
+
+Open http://localhost:5173.
+
+**As a desktop app (development):**
+
+```bash
+npm run dev:electron
+```
+
+**Build the web version:**
+
+```bash
+npm run build:web
+```
+
+The output is in `dist/web`. For a GitHub Pages project site use `VITE_BASE=/VariantScope/ npm run build:web`.
+
+**Tests**
+
+```bash
+npm test             # 251 unit tests (parsing, join, stats, table logic, CSV, cache, contrast...)
+npm run lint
+npm run test:e2e     # end-to-end tests in a real browser and in Electron
+```
+
+The end-to-end tests call the **live public APIs**, so they need internet and take several minutes. Locally they use your installed Google Chrome (headless) and run the desktop app invisibly. On CI, set `CI=1` and run `npx playwright install chromium` first.
+
+**Build installers for your own system**
+
+```bash
+npm run dist
+```
+
+Installers appear in `release/`. Requirements: the macOS installers must be built on a Mac, and the Windows ones on Windows (or use the release workflow). If your project folder is inside **iCloud Drive** (for example `~/Desktop` with sync on), macOS code signing can fail with "resource fork, Finder information, or similar detritus not allowed", because iCloud keeps adding file metadata. Build outside the synced folder:
 
 ```bash
 npx electron-builder --publish never -c.directories.output=/tmp/variantscope-release
 ```
 
+## What has been tested
+
+"Tested locally" means it was run on the developer's Mac (Apple Silicon). Anything else is verified only when GitHub Actions runs it, and is marked clearly until a real run passes. Last updated 2 Nov 2026.
+
+| Target                                                                                                                                                      | Status                                                                                                        |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Unit tests (251) and lint                                                                                                                                   | Tested locally: pass. About 97.5% statement coverage of `src/core/`                                           |
+| Web version in headless Chrome, live APIs (58 end-to-end tests: five genes, 3D picking, filters, exports, blocked sources, slow network, mobile, dark mode) | Tested locally: pass                                                                                          |
+| Desktop app in development on macOS (19 end-to-end tests: security checks, IPC search, menus, disk cache, offline mode)                                     | Tested locally: pass                                                                                          |
+| **macOS Apple Silicon (arm64) packaged app**                                                                                                                | Tested locally: built, ad-hoc signature verified, DMG mounted, packaged app launched and loaded a gene        |
+| Real fullscreen and native Save dialogs in the desktop app                                                                                                  | **Not automated** (they would take over the screen); check by hand                                            |
+| macOS Intel (x64) `.dmg`                                                                                                                                    | **UNTESTED LOCALLY, verified only by CI**                                                                     |
+| Windows installer and portable `.exe`                                                                                                                       | **UNTESTED LOCALLY, verified only by CI**                                                                     |
+| Linux `.AppImage` and `.deb`                                                                                                                                | **UNTESTED LOCALLY, verified only by CI**                                                                     |
+| GitHub Pages deployment                                                                                                                                     | Subpath build tested locally in a browser; the deployment itself is **UNTESTED LOCALLY, verified only by CI** |
+| Release workflow (tag to published release, `SHA256SUMS.txt`)                                                                                               | **UNTESTED LOCALLY, verified only by CI**                                                                     |
+
+## Security notes
+
+- **Desktop app:** `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`. The page cannot use Node.js. A strict Content-Security-Policy blocks inline scripts, `eval`, and any direct network access from the page. The shipped bundle contains no `eval` (a build step removes the one that 3Dmol contains and fails the build if that code ever changes).
+- **Only four things cross the bridge:** `fetchJson`, `saveFile`, `openExternal` and `getAppInfo`, each validating its arguments, and the main process re-checks every call and that it came from the app's own page.
+- **Network:** the main process fetches only from four allowlisted hosts (UniProt, AlphaFold DB, NCBI, gnomAD), https only, no redirects, with a timeout, a size cap and per-host rate limits. Electron's own HTTP cache is switched off so the 7-day disk cache is the only cache.
+- **Navigation and windows:** navigating away from the app and opening new windows are blocked. Links open in the system browser only if they are https and on a short allowlist. Permission requests are denied, except fullscreen for the app's own page.
+- **Data handling:** text from the APIs is only ever written as plain text (never as HTML), CSV export neutralises spreadsheet formulas, and no secrets or API keys exist.
+
+## Data attribution
+
+VariantScope displays data from four public resources. Please cite them if you use what you see here in your own work.
+
+- **UniProt.** Licensed under [Creative Commons Attribution 4.0 (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/) for the copyrightable parts of the database (UniProt's license statement). Cite: The UniProt Consortium. UniProt: the Universal Protein Knowledgebase in 2025. _Nucleic Acids Research_ 53(D1):D609-D617 (2025). [doi:10.1093/nar/gkae1010](https://doi.org/10.1093/nar/gkae1010).
+- **AlphaFold Protein Structure Database.** Provided by DeepMind and EMBL-EBI under CC BY 4.0 (the database's license and disclaimer page points to it). This covers the database; the AlphaFold model code and weights have separate terms and are not used here. Cite: Jumper, J. et al. Highly accurate protein structure prediction with AlphaFold. _Nature_ 596:583-589 (2021). [doi:10.1038/s41586-021-03819-2](https://doi.org/10.1038/s41586-021-03819-2); and Varadi, M. et al. AlphaFold Protein Structure Database in 2024: providing structure coverage for over 214 million protein sequences. _Nucleic Acids Research_ 52(D1):D368-D375 (2024). [doi:10.1093/nar/gkad1011](https://doi.org/10.1093/nar/gkad1011).
+- **ClinVar** (NCBI, National Library of Medicine). A freely available public archive of variant interpretations submitted by many laboratories; the 2018 ClinVar paper states that the work is in the public domain in the US. Submitters' classifications can differ, so always read the review status. NCBI's own data-usage policy page could not be retrieved while this was written (it sits behind a browser check), so please read it at <https://www.ncbi.nlm.nih.gov/home/about/policies/>. Cite: Landrum, M.J. et al. ClinVar: improving access to variant interpretations and supporting evidence. _Nucleic Acids Research_ 46(D1):D1062-D1067 (2018). [doi:10.1093/nar/gkx1153](https://doi.org/10.1093/nar/gkx1153).
+- **gnomAD** (Genome Aggregation Database, Broad Institute). The AWS Open Data Registry, which hosts the data, describes it as released "for the benefit of the wider scientific community without restriction on use" (v4.1, GRCh38) and lists the license as MIT. gnomAD's own terms page could not be retrieved while this was written, so please confirm at <https://gnomad.broadinstitute.org/about>. Please cite the gnomAD papers: Karczewski, K.J. et al. The mutational constraint spectrum quantified from variation in 141,456 humans. _Nature_ 581:434-443 (2020). [doi:10.1038/s41586-020-2308-7](https://doi.org/10.1038/s41586-020-2308-7); and, for the v4 constraint metrics, Chen, S. et al. A genomic mutational constraint map using variation in 76,156 human genomes. _Nature_ 625:92-100 (2024). [doi:10.1038/s41586-023-06045-0](https://doi.org/10.1038/s41586-023-06045-0). Check gnomAD's current citation guidance for the exact papers it asks for.
+
+Bundled open-source libraries: [3Dmol.js](https://3dmol.csb.pitt.edu/) (BSD-3-Clause), [Chart.js](https://www.chartjs.org/) (MIT), [Electron](https://www.electronjs.org/) (MIT) and [Vite](https://vite.dev/) (MIT), among others in `package.json`. Please check each project's own license for details.
+
 ## Stretch goals
 
-- Code signing and notarization (macOS and Windows)
-- Auto-update with `electron-updater`
+Ranked by impact for effort, best first.
+
+1. **Shareable gene URLs** (impact: medium, effort: small). Put the gene and the selected variant in the address (`#/TP53/R175H`) so a view can be bookmarked and shared, and so the browser's back button works.
+2. **"Load all variants" for big genes** (impact: high, effort: small to medium). Stream the rest of ClinVar after the first 1,500 so VUS and conflicting records are no longer under-represented, with progress and a cancel button.
+3. **Code signing, notarization and auto-update** (impact: high, effort: medium, plus yearly fees). Remove the first-launch warnings and add `electron-updater` so installed apps update themselves.
+4. **PAE overlay** (impact: medium, effort: medium). AlphaFold also publishes predicted aligned error (how confident it is about the relative position of two parts), which would show whether a clustered region is a rigid unit. The API already returns the PAE URLs.
+5. **gnomAD ancestry breakdown** (impact: medium, effort: medium). Show allele frequency per genetic ancestry group for the selected variant, to separate "rare everywhere" from "common in one group".
+
+Further ideas: compare two genes side by side, and a TCGA overlay of somatic variants in tumours.
+
+## What I learned
+
+> **TODO (for the author):** write this section in your own words before sharing the repo. Good things to cover: what surprised you about the data, the bug that was hardest to find, and what you would do differently. [`INTERVIEW.md`](INTERVIEW.md) has talking points to start from.
+
+## License
+
+The code is released under the [MIT License](LICENSE). The data shown in the app has its own terms, described under [Data attribution](#data-attribution).

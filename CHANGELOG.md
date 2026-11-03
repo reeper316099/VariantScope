@@ -1,0 +1,33 @@
+# Changelog
+
+All notable changes to VariantScope are listed here, newest first.
+
+## [0.1.0] - 2026-11-02
+
+First release. VariantScope shows where disease-linked protein changes sit in the AlphaFold 3D structure of a human protein, how confident that structure is, and how rare the changes are in the general population.
+
+### What's new
+
+- **One view per gene.** Type a human gene symbol (try `BRCA1`, `TP53`, `CFTR` or `MLH1`) and get the 3D structure, a lollipop plot along the protein, a sortable variant table, summary cards, gnomAD constraint scores and a plain-language "What this means" panel, all kept in sync: select a variant in any one and the other two follow, with the 3D view zooming to it.
+- **AlphaFold 3D structure** coloured by pLDDT confidence using AlphaFold's standard colours, with a switch to colour by pathogenic-variant density, spheres for pathogenic (and optionally benign and VUS) variants, click and hover, spin, fullscreen and Save PNG.
+- **ClinVar variants** (pathogenic, likely pathogenic, VUS, likely benign, benign, conflicting) with ClinVar's own wording and review status shown next to the class.
+- **gnomAD frequencies** for every variant, bucketed as absent, ultra-rare, rare, low-frequency or common, plus gene-level constraint (pLI, LOEUF, missense Z).
+- **A careful join between ClinVar and gnomAD.** Variants are matched by genomic coordinates first. A protein-change fallback is used only when it cannot attach a different DNA change's frequency. "Not found in gnomAD" is never confused with "gnomAD could not be reached".
+- **Numbering check.** Every variant's reference amino acid is compared with the UniProt sequence. Mismatches are never drawn on the structure, and a warning appears if fewer than 95% match.
+- **Three ways to run it from one codebase:** desktop apps for Windows, macOS and Linux (Electron), a web version on GitHub Pages, and source you can run with `npm`.
+- **Works offline in the desktop app.** Responses are cached on disk for 7 days. If the network is down, cached genes open with an "Offline: showing cached data" banner, and genes you have not opened before get a clear message instead of a hang.
+- **Honest about missing data.** A source that fails (gnomAD, AlphaFold or ClinVar) shows a warning or an error with a Retry button, and the rest of the page keeps working. Missing values say "not available"; nothing is estimated.
+- **Dark mode**, a mobile layout, keyboard shortcuts (Ctrl/Cmd+K search, Ctrl/Cmd+D dark mode, Ctrl/Cmd+E export CSV), CSV export and a text version of the 3D view.
+
+### Security
+
+- The desktop app runs the page in a sandbox with context isolation, no Node.js access and a strict Content-Security-Policy. All network access goes through the main process, which only talks to four allowlisted https hosts, with timeouts, a size limit and rate limiting.
+- The shipped code contains no `eval`.
+
+### Known limitations
+
+- The installers are **not code-signed**, so Windows and macOS show a warning the first time. See the README for how to open them.
+- For large genes only 1,500 ClinVar missense variants are loaded (pathogenic and benign first), so VUS and conflicting records are under-represented. The app says so on screen.
+- Only single-residue missense changes are plotted. Frameshift, nonsense, splice, in-frame and non-coding records are counted but not drawn.
+- Windows, Linux and macOS Intel installers, and the release and Pages workflows, were not run locally and are verified only by GitHub Actions.
+- Educational use only. Not medical advice.
