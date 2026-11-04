@@ -18,7 +18,7 @@ describe('getJson (Electron path)', () => {
     expect(isElectron()).toBe(false);
   });
 
-  it('passes the request to the main process and returns data with freshness info', async () => {
+  it('passes the request, including the gene tag, to the main process and returns freshness info', async () => {
     fetchJson.mockResolvedValue({
       ok: true,
       data: { a: 1 },
@@ -31,34 +31,22 @@ describe('getJson (Electron path)', () => {
       body: '{}',
       responseType: 'text',
       noCache: true,
+      group: 'TP53',
     });
     expect(fetchJson).toHaveBeenCalledWith('https://rest.uniprot.org/x', {
       method: 'POST',
       body: '{}',
       responseType: 'text',
       noCache: true,
+      group: 'TP53',
     });
-    expect(result).toEqual({
-      data: { a: 1 },
-      fetchedAt: 123,
-      fromCache: true,
-      stale: false,
-      offline: false,
-    });
+    expect(result).toEqual({ data: { a: 1 }, fetchedAt: 123, fromCache: true, stale: false });
   });
 
-  it('reports stale offline fallbacks', async () => {
-    fetchJson.mockResolvedValue({
-      ok: true,
-      data: 1,
-      cached: true,
-      stale: true,
-      offline: true,
-      fetchedAt: 5,
-    });
+  it('reports saved data that is out of date (stale)', async () => {
+    fetchJson.mockResolvedValue({ ok: true, data: 1, cached: true, stale: true, fetchedAt: 5 });
     expect(await getJson('https://rest.uniprot.org/x')).toMatchObject({
       stale: true,
-      offline: true,
       fromCache: true,
     });
   });

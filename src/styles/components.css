@@ -15,6 +15,16 @@
   letter-spacing: 0.01em;
 }
 
+/* The app name is a button that returns to the home page; it looks like plain heading text. */
+.brand-button {
+  padding: 0;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  background: none;
+  cursor: pointer;
+}
+
 .search {
   flex: 1;
   max-width: 420px;
@@ -712,4 +722,98 @@ select {
   .detail-list {
     grid-template-columns: 1fr;
   }
+}
+
+/* ---------- Home page: saved genes ---------- */
+.home {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.gene-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 12px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gene-card {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.gene-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.gene-card-head h3 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.gene-card p {
+  margin: 0;
+}
+
+.gene-card-facts {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.gene-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.button-primary {
+  color: #fff;
+  background: var(--accent-ui);
+  border-color: var(--accent-ui);
+}
+
+[data-theme='dark'] .button-primary {
+  color: #06202a;
+}
+
+.button-primary:hover:not(:disabled) {
+  background: var(--accent-ui);
+  filter: brightness(1.1);
+}
+
+.button-danger:hover:not(:disabled) {
+  color: var(--banner-error-text);
+  background: var(--banner-error-bg);
+}
+
+.button-small {
+  padding: 2px 10px;
+  font-size: 0.85rem;
+}
+
+.badge-outdated,
+.badge-partial {
+  color: var(--banner-warn-text);
+  background: var(--banner-warn-bg);
+}
+
+.freshness {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
 }

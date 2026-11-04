@@ -184,6 +184,14 @@ describe('fetchClinvar', () => {
     expect(r.skipped.complete).toBe(false);
   });
 
+  it('passes the gene tag and Refresh to every request', async () => {
+    const calls = fakeNcbi({ confident: [1], rest: [], total: 50 });
+    await fetchClinvar('TP53', { group: 'TP53', refresh: true });
+    expect(calls.length).toBeGreaterThan(3);
+    for (const call of getJson.mock.calls)
+      expect(call[1]).toMatchObject({ group: 'TP53', noCache: true });
+  });
+
   it('cancels when the signal is aborted', async () => {
     const controller = new AbortController();
     getJson.mockImplementation(async () => {

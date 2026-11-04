@@ -19,7 +19,7 @@ export function isValidGeneSymbol(symbol) {
 }
 
 // Looks up the reviewed (Swiss-Prot) human entry; aliases such as "P53" resolve to TP53.
-export async function fetchUniprot(symbol, { signal } = {}) {
+export async function fetchUniprot(symbol, { signal, group, refresh = false } = {}) {
   if (!isValidGeneSymbol(symbol)) throw new TypeError('Invalid gene symbol.');
   const query = `gene_exact:${symbol} AND organism_id:9606 AND reviewed:true`;
   const params = new URLSearchParams({
@@ -28,8 +28,10 @@ export async function fetchUniprot(symbol, { signal } = {}) {
     format: 'json',
     size: '5',
   });
-  const { data, fetchedAt, fromCache, offline } = await getJson(`${SEARCH_URL}?${params}`, {
+  const { data, fetchedAt, fromCache } = await getJson(`${SEARCH_URL}?${params}`, {
     signal,
+    group,
+    noCache: refresh,
   });
 
   const hits = data.results ?? [];
@@ -49,6 +51,5 @@ export async function fetchUniprot(symbol, { signal } = {}) {
     otherAccessions: hits.filter((h) => h !== hit).map((h) => h.primaryAccession),
     fetchedAt,
     fromCache,
-    offline,
   };
 }

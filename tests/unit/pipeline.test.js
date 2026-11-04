@@ -148,3 +148,48 @@ describe('loadGene', () => {
     }
   });
 });
+
+describe('loadGene: saved data, groups and Refresh', () => {
+  it('tags saved data with the gene: the typed symbol for the UniProt lookup, the official one for the rest', async () => {
+    await loadGene('alias');
+    expect(fetchUniprot.mock.calls[0][1]).toMatchObject({ group: 'ALIAS', refresh: false });
+    for (const fn of [fetchAlphaFold, fetchClinvar, fetchGnomadVariants, fetchGnomadConstraint]) {
+      expect(fn.mock.calls[0].at(-1)).toMatchObject({ group: 'GENE1', refresh: false });
+    }
+  });
+
+  it('Refresh is passed to every source', async () => {
+    await loadGene('gene1', { refresh: true });
+    for (const fn of [
+      fetchUniprot,
+      fetchAlphaFold,
+      fetchClinvar,
+      fetchGnomadVariants,
+      fetchGnomadConstraint,
+    ]) {
+      expect(fn.mock.calls[0].at(-1).refresh).toBe(true);
+    }
+  });
+
+  it('reports data older than 7 days as out of date, and fresh data as current', async () => {
+    const DAY = 86_400_000;
+    const stamp = (daysAgo) => ({ fetchedAt: Date.now() - daysAgo * DAY, fromCache: true });
+    fetchUniprot.mockResolvedValue({
+      accession: 'P1',
+      geneSymbol: 'GENE1',
+      sequence: SEQUENCE,
+      length: 8,
+      ...stamp(1),
+    });
+    fetchAlphaFold.mockResolvedValue({ plddt: [], ...stamp(10) }); // the oldest piece decides
+    fetchClinvar.mockResolvedValue({ ...clinvarResult, ...stamp(2) });
+    fetchGnomadVariants.mockResolvedValue({ variants: [], ...stamp(2) });
+    fetchGnomadConstraint.mockResolvedValue({ pli: 1, ...stamp(2) });
+    const old = await loadGene('gene1');
+    expect(old.freshness.outOfDate).toBe(true);
+    expect(old.freshness.fromCache).toBe(true);
+
+    fetchAlphaFold.mockResolvedValue({ plddt: [], ...stamp(3) });
+    expect((await loadGene('gene1')).freshness.outOfDate).toBe(false);
+  });
+});

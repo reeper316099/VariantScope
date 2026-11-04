@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } fro
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import electronPath from 'electron';
-import { PANELS, selectInTable, waitSettled } from './helpers.js';
+import { PANELS, panelState, selectInTable, waitSettled } from './helpers.js';
 
 const ROOT = path.join(import.meta.dirname, '..', '..');
 const userData = mkdtempSync(path.join(tmpdir(), 'vs-e2e-ud-'));
@@ -80,7 +80,7 @@ test.describe.serial('Electron app', () => {
     expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
   });
 
-  test('security: isolated, sandboxed, no Node in the page, exactly four bridge functions', async () => {
+  test('security: isolated, sandboxed, no Node in the page, exactly six bridge functions', async () => {
     const prefs = await app.evaluate(({ BrowserWindow }) => {
       const p = BrowserWindow.getAllWindows()[0].webContents.getLastWebPreferences();
       return {
@@ -100,8 +100,10 @@ test.describe.serial('Electron app', () => {
       await page.evaluate(() => [typeof require, typeof process, typeof module, typeof Buffer]),
     ).toEqual(['undefined', 'undefined', 'undefined', 'undefined']);
     expect(await page.evaluate(() => Object.keys(window.api).sort())).toEqual([
+      'deleteCache',
       'fetchJson',
       'getAppInfo',
+      'listCache',
       'openExternal',
       'saveFile',
     ]);
@@ -195,6 +197,24 @@ test.describe.serial('Electron app', () => {
     expect(await page.evaluate(() => window.api.openExternal('file:///etc/passwd'))).toEqual({
       ok: false,
     });
+  });
+
+  test('security: the saved-data functions validate their input and cannot reach outside the cache', async () => {
+    const bad = (code) =>
+      page.evaluate((c) => {
+        try {
+          return window.api.deleteCache(c) instanceof Promise ? 'accepted' : 'no promise';
+        } catch (e) {
+          return e.message;
+        }
+      }, code);
+    // Wrong shapes are refused by the bridge before anything reaches the main process.
+    expect(await bad(123)).toContain('"all" or an array');
+    expect(await bad('everything')).toContain('"all" or an array');
+    expect(await bad({ length: 1 })).toContain('"all" or an array');
+    // A well-formed array with an unsafe tag reaches the main process, which refuses it: 0 files removed.
+    expect(await page.evaluate(() => window.api.deleteCache(['../evil', 'a/b', 'lower']))).toBe(0);
+    expect(await page.evaluate(() => window.api.listCache())).toEqual(expect.any(Array));
   });
 
   test('search works through the IPC path: TP53 loads, all panels ready, 3D view present', async () => {
@@ -373,6 +393,75 @@ test.describe.serial('Electron app', () => {
     await expect(page.locator('#gene-header')).toContainText('cached');
   });
 
+  test('home page: genes are saved automatically and listed with their size', async () => {
+    await page.click('#brand-button');
+    await expect(page.locator('#welcome')).toBeVisible();
+    await expect(page.locator('#results')).toBeHidden();
+    const tp53 = page.locator('.gene-card[data-symbol=TP53]');
+    await expect(tp53).toBeVisible();
+    await expect(tp53).toContainText('variants analysed');
+    await expect(tp53).toContainText('pathogenic or likely pathogenic');
+    await expect(tp53).toContainText(/\d+(\.\d)? MB/);
+    await expect(page.locator('.gene-card[data-symbol=BRCA1]')).toBeVisible();
+    await expect(page.locator('#home-storage')).toContainText('saved genes');
+    // The sizes the page shows come from real files in the tagged cache.
+    const saved = await page.evaluate(() => window.api.listCache());
+    expect(saved.map((g) => g.group)).toEqual(expect.arrayContaining(['TP53', 'BRCA1']));
+    const files = readdirSync(path.join(userData, 'api-cache'));
+    expect(files.some((f) => f.startsWith('TP53~'))).toBe(true);
+    await mkdirScreenshots();
+    await page.screenshot({ path: path.join(SCREENSHOTS, 'electron-home.png'), fullPage: true });
+  });
+
+  test('home page: Open shows a saved gene straight from disk, no download', async () => {
+    const started = Date.now();
+    await page.click('.gene-card[data-symbol=TP53] >> text=Open');
+    const states = await waitSettled(page, 60_000);
+    for (const name of PANELS) expect(states[name], name).toBe('ready');
+    expect((Date.now() - started) / 1000).toBeLessThan(12);
+    await expect(page.locator('#gene-header')).toContainText('cached');
+    await expect(page.locator('#gene-header')).not.toContainText('Out of date');
+  });
+
+  test('header: Refresh data downloads the gene again and replaces the saved copy', async () => {
+    await expect(page.locator('#gene-header')).toContainText('cached');
+    await page.getByRole('button', { name: 'Refresh data' }).click();
+    await expect(page.locator('#banners')).toContainText('Refreshing TP53');
+    // After a refresh the data is new, not "cached".
+    await expect(page.locator('#gene-header')).not.toContainText('cached', { timeout: 120_000 });
+    for (const name of PANELS) expect(await panelState(page, name), name).toBe('ready');
+  });
+
+  test('home page: Delete removes only that gene (files, list entry and recent search)', async () => {
+    await page.click('#brand-button');
+    const card = page.locator('.gene-card[data-symbol=BRCA1]');
+    await card.getByRole('button', { name: 'Delete BRCA1' }).click();
+    // The first click only asks for confirmation; nothing is deleted yet.
+    await expect(card).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Delete BRCA1' })).toContainText('Click again');
+    await card.getByRole('button', { name: 'Delete BRCA1' }).click();
+    await expect(card).toHaveCount(0);
+    await expect(page.locator('#banners')).toContainText('Deleted the saved data for BRCA1');
+    const saved = await page.evaluate(() => window.api.listCache());
+    expect(saved.map((g) => g.group)).not.toContain('BRCA1');
+    expect(saved.map((g) => g.group)).toContain('TP53');
+    expect(readdirSync(path.join(userData, 'api-cache')).some((f) => f.startsWith('BRCA1~'))).toBe(
+      false,
+    );
+    await expect(page.locator('#recent-searches')).not.toContainText('BRCA1');
+    await expect(page.locator('.gene-card[data-symbol=TP53]')).toBeVisible();
+  });
+
+  test('home page: the saved list survives a restart', async () => {
+    await app.close();
+    app = await launch();
+    page = await app.firstWindow();
+    page.setDefaultTimeout(30_000);
+    await page.waitForLoadState('load');
+    await expect(page.locator('.gene-card[data-symbol=TP53]')).toBeVisible();
+    await expect(page.locator('.gene-card[data-symbol=BRCA1]')).toHaveCount(0);
+  });
+
   test('single instance: a second launch with the same data folder exits immediately', async () => {
     const child = spawn(electronPath, [ROOT], {
       env: { ...process.env, VARIANTSCOPE_USER_DATA: userData, VARIANTSCOPE_BACKGROUND: '1' },
@@ -392,7 +481,7 @@ test.describe.serial('Electron app', () => {
     expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
   });
 
-  test('menu: Clear cache empties the disk cache and tells the page', async () => {
+  test('menu: Clear cache empties the disk cache and the home page list', async () => {
     await clickMenu(app, 'Clear cache');
     await expect(page.locator('#banners')).toContainText('Cache cleared');
     await expect
@@ -402,6 +491,10 @@ test.describe.serial('Electron app', () => {
           : 0,
       )
       .toBe(0);
+    // The home page list is emptied too, so it never lists genes whose data is gone.
+    await page.click('#brand-button');
+    await expect(page.locator('.gene-card')).toHaveCount(0);
+    await expect(page.locator('#home-empty')).toBeVisible();
   });
 });
 
@@ -430,8 +523,8 @@ test.describe.serial('Electron offline mode', () => {
     await app.close();
   });
 
-  test('offline: a cached gene still opens, with an "Offline: showing cached data" banner', async () => {
-    // Age every cached response past its 7-day TTL so the app must fall back to the stale copy.
+  test('offline: an old saved gene still opens, labelled out of date, and a failed Refresh keeps it', async () => {
+    // Make every saved response 8 days old. It is NOT deleted for its age; it is only labelled.
     const dir = path.join(offlineData, 'api-cache');
     for (const file of readdirSync(dir)) {
       const entry = JSON.parse(readFileSync(path.join(dir, file), 'utf8'));
@@ -445,10 +538,22 @@ test.describe.serial('Electron offline mode', () => {
     await page.press('#gene-input', 'Enter');
     const states = await waitSettled(page, 90_000);
     for (const name of PANELS) expect(states[name], name).toBe('ready');
-    await expect(page.locator('#banners')).toContainText('Offline: showing cached data from');
+    await expect(page.locator('#banners')).toContainText('may be out of date');
+    await expect(page.locator('#gene-header')).toContainText('Out of date');
     await expect(page.locator('#gene-header')).toContainText('cached 8 days ago');
     await expect(page.locator('#viewer canvas')).toBeVisible();
     await expect(page.locator('#table tbody tr').first()).toBeVisible();
+
+    // Refresh needs the network. Offline it fails with a clear message but keeps the saved data.
+    await page.getByRole('button', { name: 'Refresh data' }).click();
+    await expect(page.locator('#banners .banner-error')).toContainText('Could not refresh TP53');
+    await expect(page.locator('#gene-header h2')).toHaveText('TP53');
+    await expect(page.locator('#table tbody tr').first()).toBeVisible();
+    await expect(page.locator('#results')).toBeVisible();
+
+    // The home page shows the same gene with the same label.
+    await page.click('#brand-button');
+    await expect(page.locator('.gene-card[data-symbol=TP53]')).toContainText('Out of date');
     await app.close();
   });
 

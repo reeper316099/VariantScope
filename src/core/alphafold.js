@@ -20,10 +20,14 @@ export function parsePlddt(pdbText) {
 }
 
 // Fetches the canonical model for an accession; returns null if AlphaFold has none.
-export async function fetchAlphaFold(accession, { signal } = {}) {
+export async function fetchAlphaFold(accession, { signal, group, refresh = false } = {}) {
   let entries;
   try {
-    ({ data: entries } = await getJson(`${API_URL}/${encodeURIComponent(accession)}`, { signal }));
+    ({ data: entries } = await getJson(`${API_URL}/${encodeURIComponent(accession)}`, {
+      signal,
+      group,
+      noCache: refresh,
+    }));
   } catch (err) {
     if (err instanceof HttpError && err.status === 404) return null;
     throw err;
@@ -33,7 +37,12 @@ export async function fetchAlphaFold(accession, { signal } = {}) {
   if (!entry) return null;
 
   // Always use the URL the API gives us (the model version changes over time).
-  const pdb = await getJson(entry.pdbUrl, { responseType: 'text', signal });
+  const pdb = await getJson(entry.pdbUrl, {
+    responseType: 'text',
+    signal,
+    group,
+    noCache: refresh,
+  });
   const plddt = parsePlddt(pdb.data);
   return {
     entryId: entry.entryId,
@@ -46,6 +55,5 @@ export async function fetchAlphaFold(accession, { signal } = {}) {
     sequence: entry.uniprotSequence,
     fetchedAt: pdb.fetchedAt,
     fromCache: pdb.fromCache,
-    offline: pdb.offline,
   };
 }

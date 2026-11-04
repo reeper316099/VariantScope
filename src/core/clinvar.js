@@ -58,11 +58,16 @@ function sleep(ms, signal) {
 // time, so they do not count toward the gap.
 let queue = Promise.resolve();
 let lastNetworkCall = 0;
-function ncbiGet(url, signal, track) {
+// `req` is {signal, group, noCache}: cancellation, the gene tag for saved data, and Refresh.
+function ncbiGet(url, req, track) {
   const run = queue.then(async () => {
-    await sleep(Math.max(0, lastNetworkCall + NCBI_GAP_MS - Date.now()), signal);
+    await sleep(Math.max(0, lastNetworkCall + NCBI_GAP_MS - Date.now()), req.signal);
     const started = Date.now();
-    const reply = await getJson(url, { signal });
+    const reply = await getJson(url, {
+      signal: req.signal,
+      group: req.group,
+      noCache: req.noCache,
+    });
     if (!reply.fromCache) lastNetworkCall = started;
     track?.(reply);
     return reply;
@@ -72,7 +77,7 @@ function ncbiGet(url, signal, track) {
 }
 
 // Runs an esearch and returns {count, ids} (ids limited to `retmax`). `track` sees every reply.
-async function esearch(term, retmax, signal, track) {
+async function esearch(term, retmax, req, track) {
   const ids = [];
   let count;
   // Page through the results; the first request also tells us the total count (even if retmax is 0).
@@ -84,7 +89,7 @@ async function esearch(term, retmax, signal, track) {
       retstart: String(ids.length),
       retmax: String(Math.min(ESEARCH_PAGE, retmax - ids.length)),
     });
-    const { data } = await ncbiGet(`${EUTILS}/esearch.fcgi?${params}`, signal, track);
+    const { data } = await ncbiGet(`${EUTILS}/esearch.fcgi?${params}`, req, track);
     count = Number(data.esearchresult.count);
     if (data.esearchresult.idlist.length === 0) break;
     ids.push(...data.esearchresult.idlist);
@@ -93,7 +98,7 @@ async function esearch(term, retmax, signal, track) {
 }
 
 // Fetches esummary records for a list of ids, in batches, reporting progress after each batch.
-async function esummaryAll(ids, signal, onProgress, track) {
+async function esummaryAll(ids, req, onProgress, track) {
   const records = [];
   onProgress?.({ loaded: 0, total: ids.length });
   for (let i = 0; i < ids.length; i += BATCH_SIZE) {
@@ -102,7 +107,7 @@ async function esummaryAll(ids, signal, onProgress, track) {
       retmode: 'json',
       id: ids.slice(i, i + BATCH_SIZE).join(','),
     });
-    const { data } = await ncbiGet(`${EUTILS}/esummary.fcgi?${params}`, signal, track);
+    const { data } = await ncbiGet(`${EUTILS}/esummary.fcgi?${params}`, req, track);
     for (const uid of data.result.uids) records.push(data.result[uid]);
     onProgress?.({ loaded: Math.min(i + BATCH_SIZE, ids.length), total: ids.length });
   }
@@ -140,10 +145,10 @@ export function parseSummaryRecord(record, gene) {
 
 // Counts why non-missense records exist (frameshift, splice, ...). Returns null if it fails;
 // this is an explanation only, so a failure must not break loading.
-async function countNonMissense(gene, missenseTotal, signal) {
+async function countNonMissense(gene, missenseTotal, req) {
   try {
     const geneTerm = `${gene}[gene]`;
-    const { count: total } = await esearch(geneTerm, 0, signal);
+    const { count: total } = await esearch(geneTerm, 0, req);
     const reasons = [];
     let excluded = '';
     let counted = 0;
@@ -151,7 +156,7 @@ async function countNonMissense(gene, missenseTotal, signal) {
       const { count } = await esearch(
         `${geneTerm} NOT "missense variant"[molecular consequence]${excluded} AND ${term}`,
         0,
-        signal,
+        req,
       );
       if (count > 0) reasons.push({ reason, count });
       counted += count;
@@ -171,31 +176,34 @@ async function countNonMissense(gene, missenseTotal, signal) {
 // (pathogenic/likely pathogenic/benign/likely benign) are loaded first, then the rest.
 export async function fetchClinvar(
   gene,
-  { signal, onProgress, maxVariants = MAX_VARIANTS, includeSkipBreakdown = true } = {},
+  {
+    signal,
+    onProgress,
+    maxVariants = MAX_VARIANTS,
+    includeSkipBreakdown = true,
+    group,
+    refresh = false,
+  } = {},
 ) {
   if (!isValidGeneSymbol(gene)) throw new TypeError('Invalid gene symbol.');
+  const req = { signal, group, noCache: refresh };
   const missense = `${gene}[gene] AND "missense variant"[molecular consequence]`;
 
-  // Every data reply is recorded so we can report how fresh the data is (cached? offline?).
+  // Every data reply is recorded so we can report how fresh the data is (saved copy or new?).
   const replies = [];
   const track = (reply) => replies.push(reply);
 
-  const confident = await esearch(
-    `${missense} AND ${CONFIDENT_CLASSES}`,
-    maxVariants,
-    signal,
-    track,
-  );
+  const confident = await esearch(`${missense} AND ${CONFIDENT_CLASSES}`, maxVariants, req, track);
   const rest = await esearch(
     `${missense} NOT ${CONFIDENT_CLASSES}`,
     Math.max(0, maxVariants - confident.ids.length),
-    signal,
+    req,
     track,
   );
   const ids = [...confident.ids, ...rest.ids];
   const totalAvailable = confident.count + rest.count;
 
-  const records = await esummaryAll(ids, signal, onProgress, track);
+  const records = await esummaryAll(ids, req, onProgress, track);
   const variants = [];
   const dropped = new Map();
   for (const record of records) {
@@ -204,9 +212,7 @@ export async function fetchClinvar(
     else dropped.set(result.skip, (dropped.get(result.skip) ?? 0) + 1);
   }
 
-  const breakdown = includeSkipBreakdown
-    ? await countNonMissense(gene, totalAvailable, signal)
-    : null;
+  const breakdown = includeSkipBreakdown ? await countNonMissense(gene, totalAvailable, req) : null;
   // The two reason lists cover different records (non-missense vs. unplottable missense), so equal
   // labels are added together rather than listed twice.
   const merged = new Map();
@@ -228,9 +234,8 @@ export async function fetchClinvar(
       // false when the non-missense explanation could not be fetched: total is then a lower bound
       complete: breakdown !== null,
     },
-    // Freshness of the data: the oldest reply decides the age; any offline reply means offline.
+    // Freshness of the data: the oldest reply decides the age.
     fetchedAt: replies.length ? Math.min(...replies.map((r) => r.fetchedAt)) : Date.now(),
     fromCache: replies.length > 0 && replies.every((r) => r.fromCache),
-    offline: replies.some((r) => r.offline),
   };
 }

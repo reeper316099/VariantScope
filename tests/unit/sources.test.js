@@ -202,3 +202,35 @@ describe('fetchGnomadConstraint', () => {
     expect(await fetchGnomadConstraint('X1')).toBeNull();
   });
 });
+
+describe('saved data options reach the adapter', () => {
+  it('UniProt, AlphaFold and gnomAD pass the gene tag and Refresh to getJson', async () => {
+    getJson.mockResolvedValue(reply(fixture('uniprot-TP53.json')));
+    await fetchUniprot('TP53', { group: 'TP53', refresh: true });
+    expect(getJson.mock.calls[0][1]).toMatchObject({ group: 'TP53', noCache: true });
+
+    getJson.mockReset();
+    getJson
+      .mockResolvedValueOnce(reply(fixture('alphafold-P04637.json').entries))
+      .mockResolvedValueOnce(reply(fixture('alphafold-P04637-residues1-25.pdb')));
+    await fetchAlphaFold('P04637', { group: 'TP53', refresh: true });
+    for (const call of getJson.mock.calls)
+      expect(call[1]).toMatchObject({ group: 'TP53', noCache: true });
+
+    getJson.mockReset();
+    getJson.mockResolvedValue(reply(fixture('gnomad-TP53-variants.json')));
+    await fetchGnomadVariants('TP53', { group: 'TP53', refresh: true });
+    expect(getJson.mock.calls[0][1]).toMatchObject({ group: 'TP53', noCache: true });
+
+    getJson.mockReset();
+    getJson.mockResolvedValue(reply(fixture('gnomad-TP53-constraint.json')));
+    await fetchGnomadConstraint('TP53', { group: 'TP53' });
+    expect(getJson.mock.calls[0][1]).toMatchObject({ group: 'TP53', noCache: false });
+  });
+
+  it('defaults to using saved data (no Refresh) when the option is not given', async () => {
+    getJson.mockResolvedValue(reply(fixture('uniprot-TP53.json')));
+    await fetchUniprot('TP53');
+    expect(getJson.mock.calls[0][1].noCache).toBe(false);
+  });
+});

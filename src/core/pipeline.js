@@ -7,6 +7,7 @@ import { fetchGnomadConstraint, fetchGnomadVariants } from './gnomad.js';
 import { joinVariants, numberingReport } from './join.js';
 import { summarize } from './stats.js';
 import { HttpError } from './http.js';
+import { groupFor, isOutOfDate } from './freshness.js';
 
 // Runs one source; returns {status:'ok', value} or {status:'failed', error}. Cancellation re-throws.
 async function settle(task) {
@@ -23,22 +24,26 @@ async function settle(task) {
 }
 
 // Loads and joins data for a gene symbol. Pass an AbortSignal to cancel when a new search starts.
-// `onProgress` receives {phase: 'clinvar', loaded, total}.
-export async function loadGene(symbol, { signal, onProgress, maxVariants } = {}) {
-  const uniprot = await fetchUniprot(symbol, { signal });
+// `onProgress` receives {phase: 'clinvar', loaded, total}. Saved data is used when there is any,
+// whatever its age; `refresh: true` skips it and downloads everything again.
+export async function loadGene(symbol, { signal, onProgress, maxVariants, refresh = false } = {}) {
+  // The UniProt lookup is saved under the typed symbol (it may be an alias such as "P53"); the
+  // rest is saved under the official symbol. Deleting a gene removes both.
+  const uniprot = await fetchUniprot(symbol, { signal, group: groupFor(symbol), refresh });
   const gene = uniprot.geneSymbol;
+  const request = { signal, group: groupFor(gene), refresh };
 
   const [alphafold, clinvar, gnomadVariants, constraint] = await Promise.all([
-    settle(() => fetchAlphaFold(uniprot.accession, { signal })),
+    settle(() => fetchAlphaFold(uniprot.accession, request)),
     settle(() =>
       fetchClinvar(gene, {
-        signal,
+        ...request,
         maxVariants,
         onProgress: (p) => onProgress?.({ phase: 'clinvar', ...p }),
       }),
     ),
-    settle(() => fetchGnomadVariants(gene, { signal })),
-    settle(() => fetchGnomadConstraint(gene, { signal })),
+    settle(() => fetchGnomadVariants(gene, request)),
+    settle(() => fetchGnomadConstraint(gene, request)),
   ]);
 
   let variants = [];
@@ -108,15 +113,17 @@ function buildProvenance({ uniprot, alphafold, clinvar, gnomadVariants, constrai
 }
 
 // Keeps only the freshness fields of a source result.
-function pickMeta({ fetchedAt, fromCache, offline }) {
-  return { fetchedAt, fromCache: Boolean(fromCache), offline: Boolean(offline) };
+function pickMeta({ fetchedAt, fromCache }) {
+  return { fetchedAt, fromCache: Boolean(fromCache) };
 }
 
-// Overall freshness: the oldest fetch time; "cached" only if every source came from the cache.
+// Overall freshness: the oldest fetch time decides; "cached" only if every source came from saved
+// data; "outOfDate" when that oldest copy is more than 7 days old (a Refresh would get newer data).
 function summarizeFreshness(provenance) {
+  const fetchedAt = Math.min(...provenance.map((p) => p.fetchedAt));
   return {
-    fetchedAt: Math.min(...provenance.map((p) => p.fetchedAt)),
+    fetchedAt,
     fromCache: provenance.every((p) => p.fromCache),
-    offline: provenance.some((p) => p.offline),
+    outOfDate: isOutOfDate(fetchedAt),
   };
 }

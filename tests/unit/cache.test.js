@@ -101,3 +101,47 @@ describe('cache', () => {
     expect(storage.getItem('vs:theme')).not.toBeNull();
   });
 });
+
+describe('cache: saved data grouped by gene', () => {
+  const key = (gene, n) => `http:${gene}:GET\nhttps://x/${n}\n`;
+
+  it('lists the size and count of saved responses per gene, ignoring preferences', async () => {
+    const { cacheListGroups, cacheSet } = await load(fakeStorage());
+    cacheSet(key('TP53', 1), 'a'.repeat(100));
+    cacheSet(key('TP53', 2), 'b'.repeat(100));
+    cacheSet(key('BRCA1', 1), 'c');
+    cacheSet('theme', 'dark', null);
+    const groups = Object.fromEntries(cacheListGroups().map((g) => [g.group, g]));
+    expect(Object.keys(groups).sort()).toEqual(['BRCA1', 'TP53']);
+    expect(groups.TP53.entries).toBe(2);
+    expect(groups.TP53.bytes).toBeGreaterThan(200);
+  });
+
+  it('deletes only the chosen genes and leaves everything else', async () => {
+    const storage = fakeStorage();
+    const { cacheDeleteGroups, cacheGet, cacheSet } = await load(storage);
+    cacheSet(key('TP53', 1), 1);
+    cacheSet(key('BRCA1', 1), 2);
+    cacheSet('theme', 'dark', null);
+    expect(cacheDeleteGroups(['TP53'])).toBe(1);
+    expect(cacheGet(key('TP53', 1))).toBeNull();
+    expect(cacheGet(key('BRCA1', 1)).value).toBe(2);
+    expect(cacheGet('theme').value).toBe('dark');
+    expect(storage.getItem(`vs:${key('TP53', 1)}`)).toBeNull(); // gone from storage too
+  });
+
+  it('"all" removes every saved response, and still works when storage is unavailable', async () => {
+    const { cacheDeleteGroups, cacheListGroups, cacheSet } = await load('throws');
+    cacheSet(key('TP53', 1), 1); // memory only
+    expect(cacheListGroups().map((g) => g.group)).toEqual(['TP53']);
+    expect(cacheDeleteGroups('all')).toBe(1);
+    expect(cacheListGroups()).toEqual([]);
+  });
+
+  it('reads saved data from storage after a page reload', async () => {
+    const storage = fakeStorage();
+    (await load(storage)).cacheSet(key('TP53', 1), 'saved');
+    const afterReload = await load(storage); // same storage, empty memory
+    expect(afterReload.cacheListGroups().map((g) => g.group)).toEqual(['TP53']);
+  });
+});

@@ -70,3 +70,65 @@ describe('getJson (browser path)', () => {
     });
   });
 });
+
+describe('getJson (browser path): saved data, out-of-date flag and Refresh', () => {
+  it('tags saved responses with the gene so they can be found and deleted', async () => {
+    const { cacheDeleteGroups, cacheListGroups } = await import('../../src/core/cache.js');
+    fetch.mockImplementation(async () => ok({ a: 1 }));
+    await getJson(url(), { group: 'ZZTAG' });
+    await getJson(url()); // no group: saved under "_"
+    const groups = cacheListGroups().map((g) => g.group);
+    expect(groups).toContain('ZZTAG');
+    expect(groups).toContain('_');
+    cacheDeleteGroups(['ZZTAG']);
+    expect(cacheListGroups().map((g) => g.group)).not.toContain('ZZTAG');
+  });
+
+  it('serves saved data of ANY age without asking the network, and flags it out of date', async () => {
+    const u = url();
+    fetch.mockImplementation(async () => ok({ v: 'old' }));
+    await getJson(u, { group: 'TP53' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + 30 * 86_400_000); // a month later
+    const result = await getJson(u, { group: 'TP53' });
+    vi.useRealTimers();
+    expect(result).toMatchObject({ data: { v: 'old' }, fromCache: true, stale: true });
+    expect(fetch).toHaveBeenCalledTimes(1); // nothing was refetched
+  });
+
+  it('Refresh (noCache) downloads again and replaces the saved copy', async () => {
+    const u = url();
+    fetch.mockImplementation(async () => ok({ v: 'old' }));
+    await getJson(u, { group: 'TP53' });
+    fetch.mockImplementation(async () => ok({ v: 'new' }));
+    const refreshed = await getJson(u, { group: 'TP53', noCache: true });
+    expect(refreshed).toMatchObject({ data: { v: 'new' }, fromCache: false, stale: false });
+    expect((await getJson(u, { group: 'TP53' })).data).toEqual({ v: 'new' });
+  });
+
+  it('a failed Refresh reports the error and leaves the saved copy untouched', async () => {
+    vi.useFakeTimers();
+    const u = url();
+    fetch.mockImplementation(async () => ok({ v: 'saved' }));
+    await getJson(u, { group: 'TP53' });
+    fetch.mockRejectedValue(new TypeError('Failed to fetch'));
+    const refresh = getJson(u, { group: 'TP53', noCache: true });
+    const assertion = expect(refresh).rejects.toMatchObject({ kind: 'offline' });
+    await vi.advanceTimersByTimeAsync(2000);
+    await assertion;
+    vi.useRealTimers();
+    expect((await getJson(u, { group: 'TP53' })).data).toEqual({ v: 'saved' });
+  });
+
+  it('ignores an unsafe gene tag instead of putting it in a storage key', async () => {
+    const { cacheListGroups } = await import('../../src/core/cache.js');
+    fetch.mockImplementation(async () => ok(1));
+    await getJson(url(), { group: 'bad:tag/../' });
+    expect(
+      cacheListGroups()
+        .map((g) => g.group)
+        .some((g) => g.includes('bad')),
+    ).toBe(false);
+  });
+});

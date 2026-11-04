@@ -1,6 +1,7 @@
 // Main-process HTTP client: allowlist, https-only, timeout, retry, size cap, rate limit, disk cache.
 import { net } from 'electron';
 import { checkApiUrl } from './allowlist.js';
+import { isValidGroup } from './disk-cache.js';
 
 const TIMEOUT_MS = 20_000;
 const MAX_BYTES = 25 * 1024 * 1024; // largest expected response is ~1.5 MB; 25 MB is a safety cap
@@ -86,15 +87,20 @@ export function createFetcher({ cache, userAgent }) {
     const body = method === 'POST' && typeof options.body === 'string' ? options.body : undefined;
     const responseType = options.responseType === 'text' ? 'text' : 'json';
     const cacheKey = `${method}\n${check.url.href}\n${body ?? ''}`;
+    // The gene this request belongs to (a safe tag, or none), so its files can be found later.
+    const group = isValidGroup(options.group) ? options.group : undefined;
 
+    // Saved data of any age is served right away; `stale` marks it as out of date. "Refresh"
+    // sends noCache to skip the saved copy and download it again.
     if (!options.noCache) {
-      const hit = await cache.get(cacheKey);
+      const hit = await cache.get(cacheKey, group);
       if (hit)
         return {
           ok: true,
           status: hit.status,
           data: hit.data,
           cached: true,
+          stale: hit.stale,
           fetchedAt: hit.fetchedAt,
         };
     }
@@ -110,22 +116,9 @@ export function createFetcher({ cache, userAgent }) {
           return { ok: false, status, error: 'The server did not return valid JSON.' };
         }
       }
-      await cache.set(cacheKey, data, status).catch(() => {}); // a cache write failure must not fail the request
+      await cache.set(cacheKey, data, status, group).catch(() => {}); // a cache write failure must not fail the request
       return { ok: true, status, data, cached: false, fetchedAt: Date.now() };
     } catch (err) {
-      // Network failure: fall back to an expired cache entry so the app still works offline.
-      const old = options.noCache ? null : await cache.get(cacheKey, { allowStale: true });
-      if (old) {
-        return {
-          ok: true,
-          status: old.status,
-          data: old.data,
-          cached: true,
-          stale: true,
-          offline: true,
-          fetchedAt: old.fetchedAt,
-        };
-      }
       // Connection-level failures (not blocks or oversize responses) mean we are probably offline.
       const offline = err.name === 'TimeoutError' || /net::ERR_/.test(err.message ?? '');
       return { ok: false, offline, error: err.message || 'Network error.' };

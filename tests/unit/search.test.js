@@ -20,3 +20,17 @@ describe('normalizeSymbol', () => {
     for (const gene of EXAMPLE_GENES) expect(normalizeSymbol(gene).ok).toBe(true);
   });
 });
+
+describe('recent searches', () => {
+  it('can drop genes (when a saved gene is deleted) or everything', async () => {
+    const { addRecent, clearRecent, getRecent, removeRecent } =
+      await import('../../src/ui/search.js');
+    clearRecent();
+    for (const g of ['TP53', 'BRCA1', 'P53']) addRecent(g);
+    expect(getRecent()).toEqual(['P53', 'BRCA1', 'TP53']);
+    removeRecent(['TP53', 'P53']);
+    expect(getRecent()).toEqual(['BRCA1']);
+    clearRecent();
+    expect(getRecent()).toEqual([]);
+  });
+});

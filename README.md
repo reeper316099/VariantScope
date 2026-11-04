@@ -36,6 +36,18 @@ The web version talks to the public APIs straight from your browser. If a source
 - **What this means.** Plain sentences built only from the computed numbers, stating the thresholds used.
 - Selecting a variant in the 3D view, the plot or the table highlights it in all three.
 
+## Your saved genes (the home page)
+
+Every gene you open is **saved automatically**, so it opens instantly next time, even with no internet. The home page (click the app name, top left) lists them as cards:
+
+- the gene, protein name, when it was saved, how many variants were analysed, the share that is pathogenic, and how much space it uses;
+- **Open** (straight from the saved data, no download), **Refresh** (download the latest data again) and **Delete** (two clicks, so it can't happen by accident);
+- sorting by recently opened, name, size or oldest data, and **Delete all**.
+
+Saved data is **never deleted because of its age**. After 7 days it gets an **Out of date** label instead, and the app does _not_ refresh it behind your back: you decide when to press Refresh. If a Refresh fails (for example you are offline), the saved data stays on screen.
+
+Where it is kept: the desktop app stores each gene's responses as files in its data folder (`~/Library/Application Support/VariantScope/api-cache` on macOS, `%APPDATA%\VariantScope\api-cache` on Windows, `~/.config/VariantScope/api-cache` on Linux). The web version keeps them in the browser's `localStorage`, which survives closing the tab but is limited to roughly 5 MB per site, so a very large gene may not be fully saved there. Nothing is ever sent to a server, and the only personal thing stored is which genes you searched; File > Clear cache (desktop) or **Delete all** removes all of it.
+
 ## How it works
 
 ```text
@@ -54,10 +66,10 @@ src/ui/search.js --> src/core/pipeline.js   loadGene(): one source failing never
         +---------------+--------------------------------+
         | Desktop app (Electron)                         | Web version (browser)
         | window.api.fetchJson  --IPC-->  main process   | plain fetch() + localStorage cache
-        |   electron/fetcher.js: host allowlist,         |   (7 day TTL, in-memory fallback)
+        |   electron/fetcher.js: host allowlist,         |   (saved per gene, memory fallback)
         |   https only, 20 s timeout, 1 retry,           |
         |   25 MB cap, per-host rate limit,              |
-        |   7 day disk cache in the user data folder     |
+        |   saved data on disk, tagged per gene          |
         +---------------+--------------------------------+
                         |
                         v
@@ -81,7 +93,7 @@ All data comes straight from public APIs. There are no API keys, no paid service
 | [ClinVar](https://www.ncbi.nlm.nih.gov/clinvar/) (NCBI) | Variants with germline classification and review status                                                                    | NCBI E-utilities `esearch` + `esummary`          | 2 Nov 2026 |
 | [gnomAD](https://gnomad.broadinstitute.org/)            | Allele frequencies and gene constraint (dataset `gnomad_r4`, GRCh38)                                                       | `gnomad.broadinstitute.org/api` (GraphQL)        | 2 Nov 2026 |
 
-Every response is shown with when it was fetched (and "cached N days ago" if it came from the cache). The About box lists the exact data versions used for the gene on screen.
+Every response is shown with when it was fetched (and "cached N days ago" if it came from saved data, with an **Out of date** label after 7 days). The About box lists the exact data versions used for the gene on screen.
 
 ## Joining ClinVar to gnomAD, and its limits
 
@@ -203,7 +215,7 @@ The output is in `dist/web`. For a GitHub Pages project site use `VITE_BASE=/Var
 **Tests**
 
 ```bash
-npm test             # 251 unit tests (parsing, join, stats, table logic, CSV, cache, contrast...)
+npm test             # 288 unit tests (parsing, join, stats, table logic, CSV, cache, contrast...)
 npm run lint
 npm run test:e2e     # end-to-end tests in a real browser and in Electron
 ```
@@ -228,9 +240,9 @@ npx electron-builder --publish never -c.directories.output=/tmp/variantscope-rel
 
 | Target                                                                                                                                                      | Status                                                                                                        |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Unit tests (251) and lint                                                                                                                                   | Tested locally: pass. About 97.5% statement coverage of `src/core/`                                           |
-| Web version in headless Chrome, live APIs (58 end-to-end tests: five genes, 3D picking, filters, exports, blocked sources, slow network, mobile, dark mode) | Tested locally: pass                                                                                          |
-| Desktop app in development on macOS (19 end-to-end tests: security checks, IPC search, menus, disk cache, offline mode)                                     | Tested locally: pass                                                                                          |
+| Unit tests (288) and lint                                                                                                                                   | Tested locally: pass. About 97% statement coverage of `src/core/`                                             |
+| Web version in headless Chrome, live APIs (61 end-to-end tests: five genes, 3D picking, filters, exports, blocked sources, slow network, mobile, dark mode) | Tested locally: pass                                                                                          |
+| Desktop app in development on macOS (25 end-to-end tests: security checks, IPC search, menus, saved genes and the home page, disk cache, offline mode)      | Tested locally: pass                                                                                          |
 | **macOS Apple Silicon (arm64) packaged app**                                                                                                                | Tested locally: built, ad-hoc signature verified, DMG mounted, packaged app launched and loaded a gene        |
 | Real fullscreen and native Save dialogs in the desktop app                                                                                                  | **Not automated** (they would take over the screen); check by hand                                            |
 | macOS Intel (x64) `.dmg`                                                                                                                                    | **UNTESTED LOCALLY, verified only by CI**                                                                     |
@@ -242,8 +254,8 @@ npx electron-builder --publish never -c.directories.output=/tmp/variantscope-rel
 ## Security notes
 
 - **Desktop app:** `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`. The page cannot use Node.js. A strict Content-Security-Policy blocks inline scripts, `eval`, and any direct network access from the page. The shipped bundle contains no `eval` (a build step removes the one that 3Dmol contains and fails the build if that code ever changes).
-- **Only four things cross the bridge:** `fetchJson`, `saveFile`, `openExternal` and `getAppInfo`, each validating its arguments, and the main process re-checks every call and that it came from the app's own page.
-- **Network:** the main process fetches only from four allowlisted hosts (UniProt, AlphaFold DB, NCBI, gnomAD), https only, no redirects, with a timeout, a size cap and per-host rate limits. Electron's own HTTP cache is switched off so the 7-day disk cache is the only cache.
+- **Only six things cross the bridge:** `fetchJson`, `saveFile`, `openExternal`, `getAppInfo`, and for the home page `listCache` and `deleteCache`. Each validates its arguments, and the main process re-checks every call and that it came from the app's own page. `deleteCache` accepts only `"all"` or a short list of safe gene tags (capital letters, digits and hyphens), and can only touch files inside the app's own `api-cache` folder.
+- **Network:** the main process fetches only from four allowlisted hosts (UniProt, AlphaFold DB, NCBI, gnomAD), https only, no redirects, with a timeout, a size cap and per-host rate limits. Electron's own HTTP cache is switched off so the saved data is the only cache.
 - **Navigation and windows:** navigating away from the app and opening new windows are blocked. Links open in the system browser only if they are https and on a short allowlist. Permission requests are denied, except fullscreen for the app's own page.
 - **Data handling:** text from the APIs is only ever written as plain text (never as HTML), CSV export neutralises spreadsheet formulas, and no secrets or API keys exist.
 

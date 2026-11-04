@@ -5,9 +5,19 @@ import './styles/base.css';
 import './styles/components.css';
 import { cacheClearResponses } from './core/cache.js';
 import { variantsToCsv } from './core/csv.js';
-import { formatCount, formatDateTime } from './core/format.js';
+import { formatAge, formatCount, formatDateTime } from './core/format.js';
 import { HttpError, isElectron } from './core/http.js';
+import {
+  clearLibrary,
+  groupsOfEntry,
+  listLibrary,
+  recordGene,
+  removeFromLibrary,
+  sizeOfEntry,
+  sortEntries,
+} from './core/library.js';
 import { loadGene } from './core/pipeline.js';
+import { deleteSaved, listSaved } from './core/saved.js';
 import { GeneNotFoundError } from './core/uniprot.js';
 import {
   renderBanners,
@@ -20,10 +30,11 @@ import {
   renderStructureText,
 } from './ui/cards.js';
 import { el } from './ui/dom.js';
+import { armDeleteAll, renderHome } from './ui/home.js';
 import { createLollipop } from './ui/lollipop.js';
 import { PLDDT_BANDS } from './ui/palette.js';
 import { preparePanel, setPanelState } from './ui/panels.js';
-import { addRecent, initSearch } from './ui/search.js';
+import { addRecent, clearRecent, initSearch, removeRecent } from './ui/search.js';
 import { selection } from './ui/selection.js';
 import { createVariantTable } from './ui/table.js';
 import { initTheme, toggleTheme } from './ui/theme.js';
@@ -72,18 +83,24 @@ const search = initSearch({
 
 // ---------- Search flow ----------
 
-// Loads a gene and renders it; a newer search cancels this one.
-async function runSearch(symbol) {
+// Loads a gene and renders it; a newer search cancels this one. Data is saved automatically, and
+// saved data of any age is used when there is some. `refresh` downloads fresh data instead.
+async function runSearch(symbol, { refresh = false } = {}) {
   app.controller?.abort();
   const controller = new AbortController();
   app.controller = controller;
   app.symbol = symbol;
   addRecent(symbol);
   search.refreshRecent();
-  showLoading(symbol);
+  // Refreshing the gene that is already on screen keeps the current view until new data arrives,
+  // so a failed refresh (for example while offline) never takes the saved data away.
+  const keepView = refresh && !$('results').hidden && app.result?.gene.geneSymbol === symbol;
+  if (keepView) renderBanners($('banners'), [{ kind: 'info', text: `Refreshing ${symbol}\u2026` }]);
+  else showLoading(symbol);
   try {
     const result = await loadGene(symbol, {
       signal: controller.signal,
+      refresh,
       onProgress: ({ loaded, total }) => {
         if (!controller.signal.aborted) {
           renderBanners($('banners'), [
@@ -95,9 +112,23 @@ async function runSearch(symbol) {
         }
       },
     });
-    if (!controller.signal.aborted) renderResult(result);
+    if (controller.signal.aborted) return;
+    recordGene(result, symbol); // add to (or update) the saved genes on the home page
+    await renderResult(result);
+    renderLibrary();
   } catch (err) {
     if (controller.signal.aborted || (err instanceof HttpError && err.kind === 'aborted')) return;
+    if (keepView) {
+      renderBanners($('banners'), [
+        {
+          kind: 'error',
+          text: `Could not refresh ${symbol}: ${err.message}. The saved data is still shown.`,
+          action: { label: 'Try again', onClick: () => runSearch(symbol, { refresh: true }) },
+        },
+        ...buildBanners(app.result),
+      ]);
+      return;
+    }
     showFatal(symbol, err);
   }
 }
@@ -107,16 +138,74 @@ function showLoading(symbol) {
   $('welcome').hidden = true;
   $('results').hidden = false;
   selection.select(null, 'reset');
-  renderBanners($('banners'), [{ kind: 'info', text: `Loading ${symbol}…` }]);
+  renderBanners($('banners'), [{ kind: 'info', text: `Loading ${symbol}\u2026` }]);
   $('gene-header').replaceChildren(el('div', { class: 'shimmer' }));
   for (const panel of Object.values(panels)) setPanelState(panel, 'loading');
-  document.title = `${symbol} · VariantScope`;
+  document.title = `${symbol} \u00B7 VariantScope`;
+}
+
+// Goes back to the home page (the app name in the top bar is the button for this).
+function showHome() {
+  app.controller?.abort(); // stop anything still loading
+  $('results').hidden = true;
+  $('welcome').hidden = false;
+  renderBanners($('banners'), []);
+  document.title = 'VariantScope';
+  renderLibrary();
+}
+
+// ---------- Home page: the saved genes ----------
+
+// Redraws the saved-genes list with sizes from the saved data (disk cache or browser storage).
+async function renderLibrary() {
+  const saved = await listSaved().catch(() => []);
+  const all = listLibrary();
+  const sizes = new Map(all.map((entry) => [entry.symbol, sizeOfEntry(entry, saved)]));
+  renderHome(
+    {
+      list: $('home-list'),
+      empty: $('home-empty'),
+      storage: $('home-storage'),
+      clearButton: $('home-clear'),
+    },
+    {
+      entries: sortEntries(all, $('home-sort').value, sizes),
+      sizes,
+      totalBytes: [...sizes.values()].reduce((sum, bytes) => sum + bytes, 0),
+      onOpen: (symbol) => runSearch(symbol),
+      onRefresh: (symbol) => runSearch(symbol, { refresh: true }),
+      onDelete: deleteGene,
+    },
+  );
+}
+
+// Deletes one saved gene: its data, its list entry, and its recent searches.
+async function deleteGene(symbol) {
+  const entry = removeFromLibrary(symbol);
+  if (!entry) return;
+  const groups = groupsOfEntry(entry);
+  await deleteSaved(groups);
+  removeRecent(groups);
+  search.refreshRecent();
+  renderBanners($('banners'), [{ kind: 'info', text: `Deleted the saved data for ${symbol}.` }]);
+  await renderLibrary();
+}
+
+// Deletes every saved gene and the recent searches.
+async function deleteAll() {
+  await deleteSaved('all');
+  clearLibrary();
+  clearRecent();
+  search.refreshRecent();
+  renderBanners($('banners'), [{ kind: 'info', text: 'Deleted all saved genes.' }]);
+  await renderLibrary();
 }
 
 // Shows a friendly error when the gene itself could not be loaded (UniProt is required).
 function showFatal(symbol, err) {
   $('results').hidden = true;
   $('welcome').hidden = false;
+  renderLibrary();
   const retry = { label: 'Retry', onClick: () => runSearch(symbol) };
   let banner;
   if (err instanceof GeneNotFoundError) {
@@ -149,11 +238,19 @@ function showFatal(symbol, err) {
 function buildBanners(result) {
   const { clinvar, gnomadVariants, numbering, freshness } = result;
   const banners = [];
-  // Offline = a request failed and an old copy was used, or cached data is shown while the system is offline.
-  if (freshness.offline || (freshness.fromCache && navigator.onLine === false)) {
+  // Saved data shown while the computer itself is offline.
+  if (freshness.fromCache && navigator.onLine === false) {
     banners.push({
       kind: 'warn',
-      text: `Offline: showing cached data from ${formatDateTime(freshness.fetchedAt)}.`,
+      text: `Offline: showing saved data from ${formatDateTime(freshness.fetchedAt)}.`,
+    });
+  }
+  // Saved data is never deleted for its age; it is just labelled, and Refresh downloads newer data.
+  if (freshness.outOfDate) {
+    banners.push({
+      kind: 'warn',
+      text: `This data was saved ${formatAge(freshness.fetchedAt)} and may be out of date. Refresh to download the latest.`,
+      action: { label: 'Refresh', onClick: () => runSearch(app.symbol, { refresh: true }) },
     });
   }
   if (clinvar.status === 'ok' && clinvar.value.capped) {
@@ -202,7 +299,11 @@ async function renderResult(result) {
   const { gene, alphafold, clinvar, constraint, variants, summary, freshness } = result;
   const retry = () => runSearch(app.symbol);
   renderBanners($('banners'), buildBanners(result));
-  renderGeneHeader($('gene-header'), { gene, freshness });
+  renderGeneHeader($('gene-header'), {
+    gene,
+    freshness,
+    onRefresh: () => runSearch(gene.geneSymbol, { refresh: true }),
+  });
   renderProvenance($('about-provenance'), result.provenance);
   app.plotted = variants.filter((v) => v.numberingOk);
 
@@ -337,6 +438,9 @@ const syncVisibility = () =>
   app.viewer?.setVisibility({ benign: $('show-benign').checked, uncertain: $('show-vus').checked });
 $('show-benign').addEventListener('change', syncVisibility);
 $('show-vus').addEventListener('change', syncVisibility);
+$('brand-button').addEventListener('click', showHome);
+$('home-sort').addEventListener('change', () => renderLibrary());
+armDeleteAll($('home-clear'), deleteAll);
 $('plot-vus').addEventListener('change', (e) => plot.setShowUncertain(e.target.checked));
 $('plot-reset').addEventListener('click', () => plot.resetZoom());
 $('view-reset').addEventListener('click', () => app.viewer?.reset());
@@ -384,6 +488,8 @@ function exportPng() {
 
 // ---------- Environment, menu and links ----------
 
+renderLibrary(); // the home page is the first thing shown
+
 // Shows which build is running (desktop app with its version, or the web version).
 async function showEnvironment() {
   const info = isElectron() ? await window.api.getAppInfo() : null;
@@ -402,6 +508,10 @@ window.addEventListener('vs:menu', (event) => {
     'export-png': exportPng,
     'cache-cleared': () => {
       cacheClearResponses();
+      clearLibrary();
+      clearRecent();
+      search.refreshRecent();
+      renderLibrary();
       renderBanners($('banners'), [{ kind: 'info', text: 'Cache cleared.' }]);
     },
   };

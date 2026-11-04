@@ -4,7 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { isAllowedExternalLink } from './allowlist.js';
 import { buildCsp } from './csp.js';
-import { createDiskCache } from './disk-cache.js';
+import { createDiskCache, isValidGroup } from './disk-cache.js';
 import { createFetcher } from './fetcher.js';
 import { installMenu } from './menu.js';
 
@@ -115,11 +115,27 @@ function isTrustedSender(event) {
   }
 }
 
-// Registers the four IPC handlers behind the preload bridge.
+// Checks the argument of delete-cache: "all", or a short list of safe gene tags.
+const isValidDeleteTarget = (target) =>
+  target === 'all' || (Array.isArray(target) && target.length <= 100 && target.every(isValidGroup));
+
+// Registers the IPC handlers behind the preload bridge.
 function registerIpc() {
   ipcMain.handle('fetch-json', (event, url, options) => {
     if (!isTrustedSender(event)) return { ok: false, error: 'Untrusted sender.' };
     return fetchJson(String(url), options ?? {});
+  });
+
+  // Saved data per gene (for the home page): [{group, bytes, entries}].
+  ipcMain.handle('list-cache', (event) => {
+    if (!isTrustedSender(event)) return [];
+    return cache.listGroups();
+  });
+
+  // Deletes the saved files of the given genes, or all of them.
+  ipcMain.handle('delete-cache', async (event, target) => {
+    if (!isTrustedSender(event) || !isValidDeleteTarget(target)) return 0;
+    return cache.deleteGroups(target);
   });
 
   ipcMain.handle('open-external', (event, url) => {

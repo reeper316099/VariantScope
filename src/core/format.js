@@ -35,3 +35,11 @@ export function formatAge(fetchedAt, now = Date.now()) {
 export function formatDateTime(timestamp) {
   return new Date(timestamp).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
 }
+
+// Formats a size in bytes for people: "0 B", "820 KB", "14.2 MB".
+export function formatBytes(bytes) {
+  if (!bytes) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}

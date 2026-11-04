@@ -37,6 +37,21 @@ export function addRecent(symbol) {
   );
 }
 
+// Removes symbols from the recent list (used when a saved gene is deleted).
+export function removeRecent(symbols) {
+  const gone = new Set(symbols);
+  cacheSet(
+    RECENT_KEY,
+    getRecent().filter((s) => !gone.has(s)),
+    null,
+  );
+}
+
+// Forgets every recent search.
+export function clearRecent() {
+  cacheSet(RECENT_KEY, [], null);
+}
+
 // Wires the form, example chips and recent list; onSearch(symbol) runs for valid input.
 export function initSearch({ form, input, chips, recent, error, onSearch }) {
   // Validates the text and starts a search (shared by Enter, chips and recent links).

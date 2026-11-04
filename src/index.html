@@ -10,7 +10,11 @@
   <body>
     <a class="skip-link" href="#main">Skip to results</a>
     <header class="topbar">
-      <h1 class="brand">VariantScope</h1>
+      <h1 class="brand">
+        <button id="brand-button" class="brand-button" type="button" aria-label="VariantScope home">
+          VariantScope
+        </button>
+      </h1>
       <form id="search-form" class="search" role="search" autocomplete="off">
         <label for="gene-input" class="visually-hidden">Human gene symbol</label>
         <input
@@ -37,14 +41,40 @@
     <main id="main" class="page" tabindex="-1">
       <div id="banners" class="banners"></div>
 
-      <section id="welcome" class="card empty-state" aria-live="polite">
-        <h2>Explore a gene</h2>
-        <p>
-          Enter a human gene symbol to see where disease-linked protein changes sit in the AlphaFold
-          3D structure, how confident that structure is, and how rare the changes are in the general
-          population.
-        </p>
-      </section>
+      <div id="welcome" class="home" aria-live="polite">
+        <section class="card empty-state">
+          <h2>Explore a gene</h2>
+          <p>
+            Enter a human gene symbol to see where disease-linked protein changes sit in the
+            AlphaFold 3D structure, how confident that structure is, and how rare the changes are in
+            the general population.
+          </p>
+        </section>
+
+        <section id="library" class="card" aria-labelledby="library-title">
+          <div class="card-head">
+            <h2 id="library-title">Your saved genes</h2>
+            <div class="control-row">
+              <label class="field"
+                >Sort
+                <select id="home-sort">
+                  <option value="recent">Recently opened</option>
+                  <option value="name">Name (A to Z)</option>
+                  <option value="size">Size (largest first)</option>
+                  <option value="oldest">Oldest data first</option>
+                </select>
+              </label>
+              <button id="home-clear" class="button button-danger" type="button">Delete all</button>
+            </div>
+          </div>
+          <p id="home-storage" class="note"></p>
+          <p id="home-empty" class="message-empty">
+            No saved genes yet. Search for a gene above and it is saved here automatically, so it
+            opens instantly next time.
+          </p>
+          <ul id="home-list" class="gene-grid"></ul>
+        </section>
+      </div>
 
       <div id="results" hidden>
         <section id="gene-header" class="card gene-header" aria-live="polite"></section>

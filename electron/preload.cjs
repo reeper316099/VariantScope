@@ -1,4 +1,4 @@
-// Preload (sandboxed, so CommonJS): exposes exactly four validated functions as window.api.
+// Preload (sandboxed, so CommonJS): exposes exactly six validated functions as window.api.
 const { contextBridge, ipcRenderer } = require('electron');
 
 // Throws unless `value` is a non-empty string no longer than `max` characters.
@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('api', {
       clean.responseType = options.responseType;
     }
     if (options.noCache !== undefined) clean.noCache = options.noCache === true;
+    if (options.group !== undefined) clean.group = requireString(options.group, 'group', 20);
     return ipcRenderer.invoke('fetch-json', url, clean);
   },
 
@@ -44,6 +45,21 @@ contextBridge.exposeInMainWorld('api', {
   openExternal(url) {
     requireString(url, 'url', 4096);
     return ipcRenderer.invoke('open-external', url);
+  },
+
+  // Lists saved data per gene: [{group, bytes, entries}] (for the home page).
+  listCache() {
+    return ipcRenderer.invoke('list-cache');
+  },
+
+  // Deletes the saved data of some genes (an array of up to 100 gene tags) or all of it ("all").
+  deleteCache(target) {
+    const valid =
+      target === 'all' ||
+      (Array.isArray(target) && target.length <= 100 && target.every((g) => typeof g === 'string'));
+    if (!valid) throw new TypeError('target must be "all" or an array of gene tags.');
+    if (target !== 'all') target.forEach((g) => requireString(g, 'gene tag', 20));
+    return ipcRenderer.invoke('delete-cache', target);
   },
 
   // Returns {name, version, platform, arch, electron, chrome} for the About box.

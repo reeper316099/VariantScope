@@ -2,6 +2,24 @@
 
 All notable changes to VariantScope are listed here, newest first.
 
+## [0.2.0] - 2026-11-03
+
+### What's new
+
+- **Home page with your saved genes.** Every gene you open is saved automatically and listed on the home page (click the app name). Each card shows the gene, when it was saved, how many variants were analysed, the pathogenic share and how much space it uses. You can open, refresh or delete a gene, sort the list, or delete everything.
+- **Saved data no longer expires.** It is shown instantly at any age. After 7 days it gets an **Out of date** label and a **Refresh data** button. The app never refreshes it behind your back, and a failed refresh (for example offline) keeps the saved data on screen.
+- Deleting a gene also removes its entry from the "Recent" searches.
+
+### Changed
+
+- The desktop app's bridge now has six functions instead of four (`listCache` and `deleteCache` were added for the home page). Deleting accepts only `"all"` or a short list of safe gene tags and can only touch the app's own cache folder.
+- Saved files are now named by gene (`TP53~...json`) so a gene can be sized and deleted without opening files. Files saved by older builds are treated as unassigned and are removed by File > Clear cache.
+- The "Offline: showing cached data" banner now appears only when the computer itself reports it is offline. Old data is shown with the Out of date label instead.
+
+### Not changed
+
+- The web version still stores data in the browser's `localStorage` (roughly 5 MB per site), so very large genes may not be fully saved there.
+
 ## [0.1.0] - 2026-11-02
 
 First release. VariantScope shows where disease-linked protein changes sit in the AlphaFold 3D structure of a human protein, how confident that structure is, and how rare the changes are in the general population.

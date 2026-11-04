@@ -2,6 +2,7 @@
 // Electron: window.api.fetchJson (main process: no CORS, rate limits, allowlist, disk cache).
 // Browser: plain fetch() plus the localStorage cache. Nothing else in src/ knows which one runs.
 import { cacheGet, cacheSet } from './cache.js';
+import { groupFor } from './freshness.js';
 
 const TIMEOUT_MS = 20_000;
 
@@ -32,9 +33,9 @@ function abortable(promise, signal) {
 
 // Desktop path: ask the main process, then translate its reply into data or an HttpError.
 async function viaElectron(url, options) {
-  const { method, body, responseType, noCache } = options;
+  const { method, body, responseType, noCache, group } = options;
   const reply = await abortable(
-    window.api.fetchJson(url, { method, body, responseType, noCache }),
+    window.api.fetchJson(url, { method, body, responseType, noCache, group }),
     options.signal,
   );
   if (!reply.ok) {
@@ -46,24 +47,18 @@ async function viaElectron(url, options) {
     fetchedAt: reply.fetchedAt,
     fromCache: Boolean(reply.cached),
     stale: Boolean(reply.stale),
-    offline: Boolean(reply.offline),
   };
 }
 
-// Browser path: cache lookup, fetch with timeout + one retry, stale fallback when offline.
+// Browser path: saved data of any age is served instantly (flagged stale once it is out of date);
+// otherwise fetch with a timeout and one retry. `noCache` (Refresh) skips the saved copy.
 async function viaBrowser(url, options) {
   const { method, body, responseType, noCache, signal } = options;
-  const key = `http:${method}\n${url}\n${body ?? ''}`;
+  // The gene tag in the key lets "delete this gene" find all of its saved responses.
+  const key = `http:${groupFor(options.group) ?? '_'}:${method}\n${url}\n${body ?? ''}`;
   if (!noCache) {
-    const hit = cacheGet(key);
-    if (hit)
-      return {
-        data: hit.value,
-        fetchedAt: hit.savedAt,
-        fromCache: true,
-        stale: false,
-        offline: false,
-      };
+    const hit = cacheGet(key, { allowStale: true });
+    if (hit) return { data: hit.value, fetchedAt: hit.savedAt, fromCache: true, stale: hit.stale };
   }
 
   let lastError;
@@ -86,7 +81,7 @@ async function viaBrowser(url, options) {
         throw new HttpError('invalid', 'The server did not return valid JSON.');
       }
       cacheSet(key, data);
-      return { data, fetchedAt: Date.now(), fromCache: false, stale: false, offline: false };
+      return { data, fetchedAt: Date.now(), fromCache: false, stale: false };
     } catch (err) {
       if (signal?.aborted) throw new HttpError('aborted', 'Request cancelled.');
       lastError = err;
@@ -97,15 +92,12 @@ async function viaBrowser(url, options) {
   }
 
   // A failed fetch (no HttpError) in a browser means offline, blocked by CORS, or a timeout.
-  const old = noCache ? null : cacheGet(key, { allowStale: true });
-  if (old && !(lastError instanceof HttpError)) {
-    return { data: old.value, fetchedAt: old.savedAt, fromCache: true, stale: true, offline: true };
-  }
   if (lastError instanceof HttpError) throw lastError;
   throw new HttpError('offline', 'Could not reach the data source from the browser.');
 }
 
-// Fetches JSON (or text) and returns {data, fetchedAt, fromCache, stale, offline}; throws HttpError.
+// Fetches JSON (or text) and returns {data, fetchedAt, fromCache, stale}; throws HttpError.
+// Options: method, body, responseType, signal, noCache (skip saved data) and group (gene tag).
 export function getJson(url, options = {}) {
   const normalized = { method: 'GET', responseType: 'json', ...options };
   return isElectron() ? viaElectron(url, normalized) : viaBrowser(url, normalized);

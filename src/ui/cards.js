@@ -14,8 +14,8 @@ import { buildSummarySentences } from '../core/summaryText.js';
 import { clear, el, externalLink, fill } from './dom.js';
 import { CLASS_STYLE, plddtBand } from './palette.js';
 
-// Fills the gene header card: names, accession, links and data freshness.
-export function renderGeneHeader(root, { gene, freshness }) {
+// Fills the gene header card: names, accession, links, data freshness and a Refresh button.
+export function renderGeneHeader(root, { gene, freshness, onRefresh }) {
   fill(
     root,
     el(
@@ -67,10 +67,23 @@ export function renderGeneHeader(root, { gene, freshness }) {
         })
       : null,
     freshness
-      ? el('p', {
-          class: 'note',
-          text: `Data fetched ${formatDateTime(freshness.fetchedAt)}${freshness.fromCache ? ` (cached ${formatAge(freshness.fetchedAt)})` : ''}.`,
-        })
+      ? el(
+          'p',
+          { class: 'note freshness' },
+          `Data fetched ${formatDateTime(freshness.fetchedAt)}${freshness.fromCache ? ` (cached ${formatAge(freshness.fetchedAt)})` : ''}. `,
+          freshness.outOfDate
+            ? el('span', { class: 'badge badge-outdated', text: 'Out of date' })
+            : null,
+          onRefresh
+            ? el('button', {
+                class: 'button button-small',
+                type: 'button',
+                text: 'Refresh data',
+                title: 'Download the latest data for this gene',
+                onclick: onRefresh,
+              })
+            : null,
+        )
       : null,
   );
 }

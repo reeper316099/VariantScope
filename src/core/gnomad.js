@@ -15,22 +15,24 @@ export class GnomadError extends Error {
 }
 
 // Sends one GraphQL query and returns its `data`, turning GraphQL errors into exceptions.
-async function graphql(query, signal) {
-  const { data, fetchedAt, fromCache, offline } = await getJson(API_URL, {
+async function graphql(query, { signal, group, refresh }) {
+  const { data, fetchedAt, fromCache } = await getJson(API_URL, {
     method: 'POST',
     body: JSON.stringify({ query }),
     signal,
+    group,
+    noCache: refresh,
   });
   if (data.errors?.length) throw new GnomadError(data.errors[0].message);
-  return { data: data.data, fetchedAt, fromCache, offline };
+  return { data: data.data, fetchedAt, fromCache };
 }
 
 // Gets all missense variants of a gene. Frequencies use gnomAD's "joint" counts (exomes + genomes
 // with overlapping samples already handled by gnomAD), so we never double count.
-export async function fetchGnomadVariants(symbol, { signal } = {}) {
+export async function fetchGnomadVariants(symbol, { signal, group, refresh = false } = {}) {
   const query = `{ gene(gene_symbol: ${JSON.stringify(symbol)}, reference_genome: ${GNOMAD_GENOME}) {
     variants(dataset: ${GNOMAD_DATASET}) { variant_id hgvsp hgvsc consequence joint { ac an } } } }`;
-  const { data, fetchedAt, fromCache, offline } = await graphql(query, signal);
+  const { data, fetchedAt, fromCache } = await graphql(query, { signal, group, refresh });
 
   const variants = data.gene.variants
     .filter((v) => v.consequence === 'missense_variant')
@@ -52,16 +54,15 @@ export async function fetchGnomadVariants(symbol, { signal } = {}) {
     variants,
     fetchedAt,
     fromCache,
-    offline,
   };
 }
 
 // Gets gene-level constraint scores; returns null if gnomAD has none for this gene.
-export async function fetchGnomadConstraint(symbol, { signal } = {}) {
+export async function fetchGnomadConstraint(symbol, { signal, group, refresh = false } = {}) {
   const query = `{ gene(gene_symbol: ${JSON.stringify(symbol)}, reference_genome: ${GNOMAD_GENOME}) {
     canonical_transcript_id mane_select_transcript { refseq_id }
     gnomad_constraint { pli oe_lof_upper mis_z oe_mis exp_mis obs_mis flags } } }`;
-  const { data, fetchedAt, fromCache, offline } = await graphql(query, signal);
+  const { data, fetchedAt, fromCache } = await graphql(query, { signal, group, refresh });
   const c = data.gene.gnomad_constraint;
   if (!c) return null;
   return {
@@ -76,6 +77,5 @@ export async function fetchGnomadConstraint(symbol, { signal } = {}) {
     canonicalTranscript: data.gene.canonical_transcript_id ?? null,
     fetchedAt,
     fromCache,
-    offline,
   };
 }

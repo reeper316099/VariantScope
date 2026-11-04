@@ -1,8 +1,10 @@
 // Web end-to-end tests: real browser, real public APIs, the production build with its strict CSP.
 import { expect, test } from '@playwright/test';
 import {
+  PANELS,
   canvasInk,
   loadGene,
+  panelState,
   plddtBandShares,
   search,
   selectInTable,
@@ -436,5 +438,138 @@ test.describe('search validation and unknown genes', () => {
     await expect(page.locator('#gene-header h2')).toHaveText('TP53');
     await page.waitForTimeout(3000);
     await expect(page.locator('#gene-header h2')).toHaveText('TP53');
+  });
+});
+
+test.describe.serial('Saved genes (home page)', () => {
+  let context;
+  let page;
+  let apiRequests;
+  const apiCalls = /rest\.uniprot\.org|eutils\.ncbi|gnomad\.broadinstitute|alphafold\.ebi/;
+
+  test.beforeAll(async ({ browser }) => {
+    context = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+    page = await context.newPage();
+    apiRequests = [];
+    page.on(
+      'request',
+      (request) => apiCalls.test(request.url()) && apiRequests.push(request.url()),
+    );
+    await page.goto('/');
+    await loadGene(page, 'TP53');
+  });
+  test.afterAll(async () => {
+    await context.close();
+  });
+
+  test('the gene is saved automatically and appears on the home page', async () => {
+    await page.click('#brand-button');
+    await expect(page.locator('#welcome')).toBeVisible();
+    await expect(page.locator('#results')).toBeHidden();
+    const card = page.locator('.gene-card[data-symbol=TP53]');
+    await expect(card).toBeVisible();
+    await expect(card).toContainText('variants analysed');
+    await expect(card).toContainText('Saved today');
+    await expect(card).toContainText(/\d+ (KB|MB)/);
+    await expect(card).not.toContainText('Out of date');
+    await expect(page.locator('#home-storage')).toContainText('1 saved gene');
+  });
+
+  test('Open shows it instantly from saved data, with no download', async () => {
+    apiRequests.length = 0;
+    await page.click('.gene-card[data-symbol=TP53] >> text=Open');
+    const states = await waitSettled(page, 60_000);
+    for (const name of PANELS) expect(states[name], name).toBe('ready');
+    expect(apiRequests).toEqual([]);
+    await expect(page.locator('#gene-header')).toContainText('cached');
+  });
+
+  test('old saved data is labelled out of date and is never refreshed automatically', async () => {
+    // Make everything saved 10 days old, then reload the page so it reads storage afresh.
+    await page.evaluate(() => {
+      const old = Date.now() - 10 * 86_400_000;
+      for (const name of Object.keys(localStorage)) {
+        const entry = JSON.parse(localStorage.getItem(name));
+        if (name.startsWith('vs:http:')) entry.savedAt = old;
+        if (name === 'vs:library')
+          for (const gene of Object.values(entry.value)) gene.savedAt = old;
+        localStorage.setItem(name, JSON.stringify(entry));
+      }
+    });
+    await page.reload();
+    await expect(page.locator('.gene-card[data-symbol=TP53]')).toContainText('Out of date');
+    apiRequests.length = 0;
+    await page.click('.gene-card[data-symbol=TP53] >> text=Open');
+    const states = await waitSettled(page, 60_000);
+    for (const name of PANELS) expect(states[name], name).toBe('ready');
+    expect(
+      apiRequests,
+      'old data is shown as it is; nothing is downloaded behind the back',
+    ).toEqual([]);
+    await expect(page.locator('#banners')).toContainText('may be out of date');
+    await expect(page.locator('#gene-header')).toContainText('Out of date');
+  });
+
+  test('Refresh data downloads again, replaces the saved copy and removes the label', async () => {
+    apiRequests.length = 0;
+    await page.getByRole('button', { name: 'Refresh data' }).click();
+    await expect(page.locator('#gene-header')).not.toContainText('Out of date', {
+      timeout: 120_000,
+    });
+    await expect(page.locator('#banners')).not.toContainText('may be out of date');
+    expect(apiRequests.length).toBeGreaterThan(0);
+    for (const name of PANELS) expect(await panelState(page, name), name).toBe('ready');
+    await page.click('#brand-button');
+    await expect(page.locator('.gene-card[data-symbol=TP53]')).not.toContainText('Out of date');
+  });
+
+  test('Delete takes two clicks and removes the gene, its saved data and its recent search', async () => {
+    const card = page.locator('.gene-card[data-symbol=TP53]');
+    const savedKeys = () =>
+      page.evaluate(
+        () => Object.keys(localStorage).filter((k) => k.startsWith('vs:http:TP53:')).length,
+      );
+    expect(await savedKeys()).toBeGreaterThan(0);
+    await card.getByRole('button', { name: 'Delete TP53' }).click();
+    await expect(card).toBeVisible(); // the first click only asks
+    await expect(card.getByRole('button', { name: 'Delete TP53' })).toContainText('Click again');
+    await card.getByRole('button', { name: 'Delete TP53' }).click();
+    await expect(card).toHaveCount(0);
+    await expect(page.locator('#home-empty')).toBeVisible();
+    expect(await savedKeys()).toBe(0);
+    await expect(page.locator('#recent-searches')).not.toContainText('TP53');
+    await expect(page.locator('#banners')).toContainText('Deleted the saved data for TP53');
+  });
+
+  test('Delete all clears every saved gene and the recent list', async () => {
+    await page.fill('#gene-input', 'TP53');
+    await page.press('#gene-input', 'Enter');
+    await waitSettled(page);
+    await page.click('#brand-button');
+    await expect(page.locator('.gene-card')).toHaveCount(1);
+    await page.click('#home-clear');
+    await expect(page.locator('#home-clear')).toContainText('Click again');
+    await page.click('#home-clear');
+    await expect(page.locator('.gene-card')).toHaveCount(0);
+    expect(
+      await page.evaluate(
+        () => Object.keys(localStorage).filter((k) => k.startsWith('vs:http:')).length,
+      ),
+    ).toBe(0);
+    await expect(page.locator('#recent-searches .chip')).toHaveCount(0);
+  });
+
+  test('sorting the saved genes works (by name and by recently opened)', async () => {
+    // MLH1 first, TP53 last: "recent" puts TP53 first, "name" puts MLH1 first.
+    for (const gene of ['MLH1', 'TP53']) {
+      await page.locator('#example-chips .chip', { hasText: gene }).click();
+      await waitSettled(page);
+    }
+    await page.click('#brand-button');
+    const order = () => page.$$eval('.gene-card h3', (els) => els.map((e) => e.textContent));
+    await page.selectOption('#home-sort', 'name');
+    expect(await order()).toEqual(['MLH1', 'TP53']);
+    await page.selectOption('#home-sort', 'recent');
+    expect(await order()).toEqual(['TP53', 'MLH1']);
   });
 });
