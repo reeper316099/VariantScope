@@ -1,7 +1,7 @@
 {
   "name": "variantscope",
   "productName": "VariantScope",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Explore where disease-linked protein variants cluster, using AlphaFold, ClinVar and gnomAD. Educational use only.",
   "author": "reeper316099",
   "license": "MIT",

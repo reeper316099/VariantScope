@@ -48,6 +48,16 @@ Saved data is **never deleted because of its age**. After 7 days it gets an **Ou
 
 Where it is kept: the desktop app stores each gene's responses as files in its data folder (`~/Library/Application Support/VariantScope/api-cache` on macOS, `%APPDATA%\VariantScope\api-cache` on Windows, `~/.config/VariantScope/api-cache` on Linux). The web version keeps them in the browser's `localStorage`, which survives closing the tab but is limited to roughly 5 MB per site, so a very large gene may not be fully saved there. Nothing is ever sent to a server, and the only personal thing stored is which genes you searched; File > Clear cache (desktop) or **Delete all** removes all of it.
 
+### Folders (desktop app only)
+
+In the desktop app you can organise your saved genes into **folders**, like a file manager. The web version does not have folders: its home page stays a flat list.
+
+- **New folder** makes a folder in the one you are looking at, so folders can be nested (up to six levels). The path at the top ("All genes > Cancer > Breast") shows where you are, and each step is a button that takes you back.
+- A gene can be in **several folders** at once. Use **Folders...** on a gene card to tick them. A gene in no folder sits at the top level.
+- **Move** things with the **Move to...** menu on a folder, or by **dragging** a gene or folder card onto a folder (or onto a step of the path to move it up). Dragging a gene out of the folder you are in moves it, so it leaves that folder.
+- A folder is only a label. **Delete folder only** keeps all your genes (its subfolders move up one level). **Delete folder and everything inside** also deletes the saved genes that are in no other folder, and tells you which ones first.
+- The folder layout is stored with the home page list in the app's data folder, so no new access was needed: the desktop bridge still has six functions.
+
 ## How it works
 
 ```text
@@ -215,7 +225,7 @@ The output is in `dist/web`. For a GitHub Pages project site use `VITE_BASE=/Var
 **Tests**
 
 ```bash
-npm test             # 288 unit tests (parsing, join, stats, table logic, CSV, cache, contrast...)
+npm test             # 313 unit tests (parsing, join, stats, table logic, CSV, cache, contrast...)
 npm run lint
 npm run test:e2e     # end-to-end tests in a real browser and in Electron
 ```
@@ -238,18 +248,18 @@ npx electron-builder --publish never -c.directories.output=/tmp/variantscope-rel
 
 "Tested locally" means it was run on the developer's Mac (Apple Silicon). Anything else is verified only when GitHub Actions runs it, and is marked clearly until a real run passes. Last updated 2 Nov 2026.
 
-| Target                                                                                                                                                      | Status                                                                                                        |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Unit tests (288) and lint                                                                                                                                   | Tested locally: pass. About 97% statement coverage of `src/core/`                                             |
-| Web version in headless Chrome, live APIs (61 end-to-end tests: five genes, 3D picking, filters, exports, blocked sources, slow network, mobile, dark mode) | Tested locally: pass                                                                                          |
-| Desktop app in development on macOS (25 end-to-end tests: security checks, IPC search, menus, saved genes and the home page, disk cache, offline mode)      | Tested locally: pass                                                                                          |
-| **macOS Apple Silicon (arm64) packaged app**                                                                                                                | Tested locally: built, ad-hoc signature verified, DMG mounted, packaged app launched and loaded a gene        |
-| Real fullscreen and native Save dialogs in the desktop app                                                                                                  | **Not automated** (they would take over the screen); check by hand                                            |
-| macOS Intel (x64) `.dmg`                                                                                                                                    | **UNTESTED LOCALLY, verified only by CI**                                                                     |
-| Windows installer and portable `.exe`                                                                                                                       | **UNTESTED LOCALLY, verified only by CI**                                                                     |
-| Linux `.AppImage` and `.deb`                                                                                                                                | **UNTESTED LOCALLY, verified only by CI**                                                                     |
-| GitHub Pages deployment                                                                                                                                     | Subpath build tested locally in a browser; the deployment itself is **UNTESTED LOCALLY, verified only by CI** |
-| Release workflow (tag to published release, `SHA256SUMS.txt`)                                                                                               | **UNTESTED LOCALLY, verified only by CI**                                                                     |
+| Target                                                                                                                                                          | Status                                                                                                        |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Unit tests (313) and lint                                                                                                                                       | Tested locally: pass. About 97% statement coverage of `src/core/`                                             |
+| Web version in headless Chrome, live APIs (66 end-to-end tests: five genes, 3D picking, filters, exports, blocked sources, slow network, mobile, dark mode)     | Tested locally: pass                                                                                          |
+| Desktop app in development on macOS (34 end-to-end tests: security checks, IPC search, menus, saved genes, the home page and folders, disk cache, offline mode) | Tested locally: pass                                                                                          |
+| **macOS Apple Silicon (arm64) packaged app**                                                                                                                    | Tested locally: built, ad-hoc signature verified, DMG mounted, packaged app launched and loaded a gene        |
+| Real fullscreen and native Save dialogs in the desktop app                                                                                                      | **Not automated** (they would take over the screen); check by hand                                            |
+| macOS Intel (x64) `.dmg`                                                                                                                                        | **UNTESTED LOCALLY, verified only by CI**                                                                     |
+| Windows installer and portable `.exe`                                                                                                                           | **UNTESTED LOCALLY, verified only by CI**                                                                     |
+| Linux `.AppImage` and `.deb`                                                                                                                                    | **UNTESTED LOCALLY, verified only by CI**                                                                     |
+| GitHub Pages deployment                                                                                                                                         | Subpath build tested locally in a browser; the deployment itself is **UNTESTED LOCALLY, verified only by CI** |
+| Release workflow (tag to published release, `SHA256SUMS.txt`)                                                                                                   | **UNTESTED LOCALLY, verified only by CI**                                                                     |
 
 ## Security notes
 

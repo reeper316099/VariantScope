@@ -11,6 +11,8 @@ import { PANELS, panelState, selectInTable, waitSettled } from './helpers.js';
 
 const ROOT = path.join(import.meta.dirname, '..', '..');
 const userData = mkdtempSync(path.join(tmpdir(), 'vs-e2e-ud-'));
+// The version shown in the app comes from package.json, so a version bump never breaks this test.
+const { version } = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 const SCREENSHOTS = path.join(ROOT, 'docs', 'screenshots');
 
 // Launches the app against the shared user-data folder (extra = Chromium switches).
@@ -76,7 +78,7 @@ test.describe.serial('Electron app', () => {
   test('launches with the right title, origin and desktop label', async () => {
     expect(await page.title()).toBe('VariantScope');
     expect(page.url()).toBe('app://local/index.html');
-    await expect(page.locator('#env-label')).toContainText('Desktop app v0.1.0');
+    await expect(page.locator('#env-label')).toContainText(`Desktop app v${version}`);
     expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
   });
 
@@ -576,3 +578,215 @@ async function mkdirScreenshots() {
   const { mkdir } = await import('node:fs/promises');
   await mkdir(SCREENSHOTS, { recursive: true });
 }
+
+// Folders on the home page (desktop app only). The saved list is seeded straight into the page's
+// storage, so these tests need no network and no downloads.
+test.describe.serial('Electron folders (home page)', () => {
+  const folderUserData = mkdtempSync(path.join(tmpdir(), 'vs-e2e-folders-'));
+  let app;
+  let page;
+  const errors = [];
+
+  const launchFolders = () =>
+    electron.launch({
+      args: [ROOT, ...SOFTWARE_WEBGL],
+      env: {
+        ...process.env,
+        VARIANTSCOPE_USER_DATA: folderUserData,
+        VARIANTSCOPE_BACKGROUND: '1',
+      },
+      timeout: 30_000,
+    });
+
+  // Opens the app and waits for the home page.
+  const open = async () => {
+    app = await launchFolders();
+    page = await app.firstWindow();
+    page.setDefaultTimeout(30_000);
+    page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    await page.waitForLoadState('load');
+  };
+
+  const gene = (symbol) => page.locator(`.gene-card[data-symbol=${symbol}]`);
+  const folder = (name) => page.locator(`.folder-card[data-name="${name}"]`);
+  const crumbs = () => page.getByRole('navigation', { name: 'Folder path' });
+  const dialog = () => page.locator('dialog[open]');
+
+  // Drags one element onto another with real mouse movements (what a person does).
+  const drag = async (source, target) => {
+    await source.scrollIntoViewIfNeeded();
+    const from = await source.boundingBox();
+    const to = await target.boundingBox();
+    await page.mouse.move(from.x + from.width / 2, from.y + 12);
+    await page.mouse.down();
+    await page.mouse.move(from.x + from.width / 2 + 12, from.y + 24, { steps: 4 });
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 });
+    await page.mouse.up();
+  };
+
+  // Makes a folder in the folder that is currently open, using the New folder dialog.
+  const newFolder = async (name) => {
+    await page.click('#new-folder');
+    await dialog().getByRole('textbox', { name: 'Folder name' }).fill(name);
+    await dialog().getByRole('button', { name: 'Create' }).click();
+  };
+
+  test.beforeAll(async () => {
+    await open();
+    await page.evaluate(() => {
+      const entry = (symbol, at) => ({
+        symbol,
+        accession: 'P00000',
+        proteinName: `${symbol} protein`,
+        length: 100,
+        queries: [],
+        savedAt: Date.now(),
+        lastOpenedAt: at,
+        partial: false,
+        analysed: 10,
+        pathogenicPct: 50,
+        capped: false,
+      });
+      const library = { TP53: entry('TP53', 3), BRCA1: entry('BRCA1', 2), CFTR: entry('CFTR', 1) };
+      localStorage.setItem(
+        'vs:library',
+        JSON.stringify({ value: library, savedAt: Date.now(), ttl: null }),
+      );
+    });
+    await page.reload();
+    await expect(gene('TP53')).toBeVisible();
+  });
+  test.afterAll(async () => {
+    await app?.close().catch(() => {});
+  });
+
+  test('the desktop home page offers folders, with genes at the top level', async () => {
+    await expect(page.locator('#new-folder')).toBeVisible();
+    await expect(crumbs()).toContainText('All genes');
+    await expect(page.locator('.gene-card')).toHaveCount(3);
+    await expect(
+      gene('TP53').getByRole('button', { name: /Choose the folders for TP53/ }),
+    ).toBeVisible();
+  });
+
+  test('create a folder, and nest another inside it', async () => {
+    await newFolder('Cancer');
+    await expect(folder('Cancer')).toBeVisible();
+    await expect(folder('Cancer')).toContainText('0 genes');
+    await folder('Cancer').getByRole('button', { name: 'Open folder Cancer' }).click();
+    await expect(crumbs()).toContainText('All genes');
+    await expect(crumbs().locator('.crumb-current')).toHaveText('Cancer');
+    await expect(page.locator('#home-empty')).toContainText('This folder is empty');
+    await newFolder('Breast');
+    await expect(folder('Breast')).toBeVisible();
+    await folder('Breast').getByRole('button', { name: 'Open folder Breast' }).click();
+    await expect(crumbs()).toContainText('Cancer');
+    await expect(crumbs().locator('.crumb-current')).toHaveText('Breast');
+    // The breadcrumb takes you back up.
+    await crumbs().getByRole('button', { name: 'Cancer' }).click();
+    await expect(folder('Breast')).toBeVisible();
+    await crumbs().getByRole('button', { name: 'All genes' }).click();
+    await expect(folder('Cancer')).toBeVisible();
+    await expect(folder('Breast')).toHaveCount(0);
+  });
+
+  test('a duplicate or empty name shows a message and keeps the dialog open', async () => {
+    await page.click('#new-folder');
+    await dialog().getByRole('textbox', { name: 'Folder name' }).fill('cancer');
+    await dialog().getByRole('button', { name: 'Create' }).click();
+    await expect(dialog().getByRole('alert')).toContainText('already exists');
+    await dialog().getByRole('textbox', { name: 'Folder name' }).fill('   ');
+    await dialog().getByRole('button', { name: 'Create' }).click();
+    await expect(dialog().getByRole('alert')).toContainText('Type a name');
+    await page.keyboard.press('Escape');
+    await expect(dialog()).toHaveCount(0);
+  });
+
+  test('"Folders..." puts one gene in several folders; it leaves the top level', async () => {
+    await gene('BRCA1')
+      .getByRole('button', { name: /Choose the folders for BRCA1/ })
+      .click();
+    await dialog().getByLabel('Cancer', { exact: true }).check();
+    await dialog().getByLabel('Cancer / Breast', { exact: true }).check();
+    await dialog().getByRole('button', { name: 'Save' }).click();
+    await expect(gene('BRCA1')).toHaveCount(0);
+    await expect(folder('Cancer')).toContainText('1 gene');
+    await folder('Cancer').getByRole('button', { name: 'Open folder Cancer' }).click();
+    await expect(gene('BRCA1')).toBeVisible();
+    await folder('Breast').getByRole('button', { name: 'Open folder Breast' }).click();
+    await expect(gene('BRCA1')).toBeVisible();
+    await crumbs().getByRole('button', { name: 'All genes' }).click();
+  });
+
+  test('drag and drop: a gene onto a folder, and a folder onto a folder', async () => {
+    await drag(gene('TP53'), folder('Cancer'));
+    await expect(gene('TP53')).toHaveCount(0);
+    await newFolder('Heart');
+    await drag(folder('Heart'), folder('Cancer'));
+    await expect(folder('Heart')).toHaveCount(0);
+    await folder('Cancer').getByRole('button', { name: 'Open folder Cancer' }).click();
+    await expect(folder('Heart')).toBeVisible();
+    await expect(gene('TP53')).toBeVisible();
+    // Dropping on a breadcrumb moves it up: TP53 goes back to the top level.
+    await drag(gene('TP53'), crumbs().getByRole('button', { name: 'All genes' }));
+    await expect(gene('TP53')).toHaveCount(0);
+    await crumbs().getByRole('button', { name: 'All genes' }).click();
+    await expect(gene('TP53')).toBeVisible();
+  });
+
+  test('"Move to..." moves a folder, and refuses to put it inside itself', async () => {
+    await folder('Cancer').getByRole('button', { name: 'Move folder Cancer' }).click();
+    const own = dialog().getByLabel('Cancer / Breast', { exact: true });
+    await expect(own).toHaveCount(0); // its own subfolders are not offered
+    await dialog().getByRole('button', { name: 'Cancel' }).click();
+    await newFolder('Archive');
+    await folder('Cancer').getByRole('button', { name: 'Move folder Cancer' }).click();
+    await dialog().getByLabel('Archive', { exact: true }).check();
+    await dialog().getByRole('button', { name: 'Move' }).click();
+    await expect(folder('Cancer')).toHaveCount(0);
+    await folder('Archive').getByRole('button', { name: 'Open folder Archive' }).click();
+    await expect(folder('Cancer')).toBeVisible();
+    await crumbs().getByRole('button', { name: 'All genes' }).click();
+  });
+
+  test('rename a folder', async () => {
+    await folder('Archive').getByRole('button', { name: 'Rename folder Archive' }).click();
+    await dialog().getByRole('textbox', { name: 'Folder name' }).fill('Old work');
+    await dialog().getByRole('button', { name: 'Rename' }).click();
+    await expect(folder('Old work')).toBeVisible();
+    await expect(folder('Archive')).toHaveCount(0);
+    await mkdirScreenshots();
+    await page.screenshot({ path: path.join(SCREENSHOTS, 'electron-folders.png'), fullPage: true });
+  });
+
+  test('the layout survives a restart', async () => {
+    await app.close();
+    await open();
+    await expect(folder('Old work')).toBeVisible();
+    await expect(gene('TP53')).toBeVisible();
+    await folder('Old work').getByRole('button', { name: 'Open folder Old work' }).click();
+    await folder('Cancer').getByRole('button', { name: 'Open folder Cancer' }).click();
+    await expect(crumbs()).toContainText('Old work');
+    await expect(gene('BRCA1')).toBeVisible();
+    await crumbs().getByRole('button', { name: 'All genes' }).click();
+  });
+
+  test('deleting only a folder keeps its genes saved; deleting with contents removes them', async () => {
+    // "Old work" holds Cancer (which holds BRCA1 and Breast). Delete only "Old work".
+    await folder('Old work').getByRole('button', { name: 'Delete folder Old work' }).click();
+    await expect(dialog()).toContainText('subfolder');
+    await dialog().getByRole('button', { name: 'Delete folder only' }).click();
+    await expect(folder('Old work')).toHaveCount(0);
+    await expect(folder('Cancer')).toBeVisible(); // moved up one level
+    await expect(page.locator('.gene-card[data-symbol]')).toHaveCount(2); // TP53 + CFTR at the top
+    // Cancer holds BRCA1 (also in Breast). Delete with contents: BRCA1 is only in these two.
+    await folder('Cancer').getByRole('button', { name: 'Delete folder Cancer' }).click();
+    await expect(dialog()).toContainText('BRCA1');
+    await dialog().getByRole('button', { name: 'Delete folder and everything inside' }).click();
+    await expect(folder('Cancer')).toHaveCount(0);
+    await expect(page.locator('#home-storage')).toContainText('2 saved genes');
+    await expect(gene('TP53')).toBeVisible();
+    await expect(gene('CFTR')).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+});

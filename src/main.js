@@ -30,6 +30,17 @@ import {
   renderStructureText,
 } from './ui/cards.js';
 import { el } from './ui/dom.js';
+import { loadFolders, saveFolders } from './core/folderStore.js';
+import {
+  createFolder,
+  deleteFolder,
+  genesIn,
+  moveFolder,
+  moveGene,
+  pruneGenes,
+  renameFolder,
+  setGeneFolders,
+} from './core/folders.js';
 import { armDeleteAll, renderHome } from './ui/home.js';
 import { createLollipop } from './ui/lollipop.js';
 import { PLDDT_BANDS } from './ui/palette.js';
@@ -53,6 +64,7 @@ const app = {
   plotted: [],
   viewer: null,
   viewerFailed: false,
+  folderId: null, // the folder open on the home page (desktop app); null = top level
 };
 const plot = createLollipop($('plot'), { onSelect: (id) => selection.select(id, 'plot') });
 const table = createVariantTable($('table'), {
@@ -156,25 +168,92 @@ function showHome() {
 
 // ---------- Home page: the saved genes ----------
 
+// Loads the folder layout, forgetting genes that are no longer saved. Folders are a desktop-app
+// feature: the web version returns null here and never reads or writes folder data.
+function currentLayout(symbols) {
+  if (!isElectron()) return null;
+  const { state, changed } = pruneGenes(loadFolders(), symbols);
+  if (changed) saveFolders(state);
+  return state;
+}
+
+// Saves the result of a folder change and redraws; returns an error message or null.
+function applyLayout(result, notice) {
+  if (!result.ok) return result.error;
+  saveFolders(result.state);
+  if (notice) renderBanners($('banners'), [{ kind: 'info', text: notice }]);
+  renderLibrary();
+  return null;
+}
+
+// The handlers the home page calls for folders (each one is a small change to the saved layout).
+function folderHandlers() {
+  const layout = () => loadFolders();
+  return {
+    onNavigate: (id) => {
+      app.folderId = id;
+      renderLibrary();
+    },
+    onCreateFolder: (name, parentId) => applyLayout(createFolder(layout(), name, parentId)),
+    onRenameFolder: (id, name) => applyLayout(renameFolder(layout(), id, name)),
+    onMoveFolder: (id, toParent) => {
+      const error = applyLayout(moveFolder(layout(), id, toParent));
+      if (error) renderBanners($('banners'), [{ kind: 'error', text: error }]);
+      return error;
+    },
+    onSetGeneFolders: (symbol, ids) =>
+      applyLayout({ ok: true, state: setGeneFolders(layout(), symbol, ids) }),
+    onMoveGene: (symbol, from, to) => applyLayout(moveGene(layout(), symbol, from, to)),
+    onDeleteFolder: async (id, withContents) => {
+      const before = layout();
+      const result = deleteFolder(before, id, { withContents });
+      if (!result.ok) return result.error;
+      // If you were inside the deleted folder, step back to the one above it.
+      if (
+        app.folderId === id ||
+        (withContents && result.state.folders[app.folderId] === undefined)
+      ) {
+        app.folderId = before.folders[id].parent;
+      }
+      applyLayout(result, `Deleted the folder "${before.folders[id].name}".`);
+      for (const symbol of result.genesToDelete) await deleteGene(symbol);
+      return null;
+    },
+  };
+}
+
 // Redraws the saved-genes list with sizes from the saved data (disk cache or browser storage).
 async function renderLibrary() {
   const saved = await listSaved().catch(() => []);
   const all = listLibrary();
   const sizes = new Map(all.map((entry) => [entry.symbol, sizeOfEntry(entry, saved)]));
+  const symbols = all.map((entry) => entry.symbol);
+  const layout = currentLayout(symbols);
+  if (layout && app.folderId !== null && !layout.folders[app.folderId]) app.folderId = null;
+  const shown = layout ? new Set(genesIn(layout, app.folderId, symbols)) : null;
   renderHome(
     {
       list: $('home-list'),
       empty: $('home-empty'),
       storage: $('home-storage'),
       clearButton: $('home-clear'),
+      toolbar: $('home-folders'),
     },
     {
-      entries: sortEntries(all, $('home-sort').value, sizes),
+      entries: sortEntries(
+        shown ? all.filter((entry) => shown.has(entry.symbol)) : all,
+        $('home-sort').value,
+        sizes,
+      ),
       sizes,
       totalBytes: [...sizes.values()].reduce((sum, bytes) => sum + bytes, 0),
+      totalCount: all.length,
       onOpen: (symbol) => runSearch(symbol),
       onRefresh: (symbol) => runSearch(symbol, { refresh: true }),
       onDelete: deleteGene,
+      view: layout
+        ? { state: layout, currentId: app.folderId, symbols, ...folderHandlers() }
+        : null,
     },
   );
 }

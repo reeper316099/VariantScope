@@ -817,3 +817,117 @@ select {
   align-items: center;
   gap: 4px 8px;
 }
+
+/* ---------- Home page: folders (desktop app only) ---------- */
+.folder-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-top: 8px;
+}
+
+.folder-toolbar:empty {
+  display: none;
+}
+
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.crumbs li + li::before {
+  content: '>';
+  margin-right: 4px;
+  color: var(--text-muted);
+}
+
+.crumb {
+  padding: 2px 6px;
+  font: inherit;
+  color: var(--accent-ui);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.crumb-current {
+  font-weight: 600;
+}
+
+.folder-card {
+  border-style: dashed;
+}
+
+.is-dragging {
+  opacity: 0.5;
+}
+
+.drop-target {
+  outline: 3px solid var(--accent-ui);
+  outline-offset: 2px;
+}
+
+.dialog {
+  width: min(480px, calc(100vw - 32px));
+  padding: 18px 20px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.dialog::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+
+.dialog h3 {
+  margin: 0 0 10px;
+}
+
+.dialog-input {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+
+.dialog-error {
+  min-height: 1.2em;
+  margin: 6px 0 0;
+  color: var(--banner-error-text);
+}
+
+.dialog-list {
+  display: grid;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+  margin: 8px 0;
+}
+
+.dialog-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}

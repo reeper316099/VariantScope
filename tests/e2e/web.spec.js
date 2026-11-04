@@ -462,6 +462,15 @@ test.describe.serial('Saved genes (home page)', () => {
     await context.close();
   });
 
+  test('folders are a desktop-app feature: the web home page has none', async () => {
+    await page.click('#brand-button');
+    await expect(page.locator('#home-folders')).toBeEmpty();
+    await expect(page.locator('#new-folder')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Choose the folders/ })).toHaveCount(0);
+    await expect(page.locator('.gene-card[draggable=true]')).toHaveCount(0);
+    expect(await page.evaluate(() => localStorage.getItem('vs:folders'))).toBeNull();
+  });
+
   test('the gene is saved automatically and appears on the home page', async () => {
     await page.click('#brand-button');
     await expect(page.locator('#welcome')).toBeVisible();

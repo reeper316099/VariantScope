@@ -2,6 +2,19 @@
 
 All notable changes to VariantScope are listed here, newest first.
 
+## [0.3.0] - 2026-11-04
+
+### What's new
+
+- **Folders on the home page (desktop app only).** Create folders, nest them inside each other (up to six levels), rename them and move them. A gene can be in several folders at once, or in none (it then sits at the top level). Move things with the **Move to...** menu or by dragging a gene or folder onto a folder or onto a step of the path at the top.
+- **Safe deleting.** Deleting a folder keeps your genes by default. The "and everything inside" choice names the genes it would delete first.
+
+### Notes
+
+- Folders are a label only: no gene data is moved or copied, and nothing new crosses the desktop bridge (still six functions).
+- The web version is unchanged: its home page has no folders and stores nothing about them.
+- Folder layouts from this version are kept in the same place as the saved-genes list, so older saved genes simply start at the top level.
+
 ## [0.2.0] - 2026-11-03
 
 ### What's new
