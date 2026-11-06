@@ -61,6 +61,11 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then PUBLISH=always; else PUBLISH=never; fi
           npx electron-builder --publish "$PUBLISH"
+      # Windows only: also builds the Microsoft Store package. It is NOT put on the GitHub Release
+      # (it is unsigned until the Store signs it); you upload it to Partner Center by hand.
+      - name: Build the Microsoft Store package
+        if: matrix.os == 'windows-latest'
+        run: npx electron-builder --win appx --publish never
       - uses: actions/upload-artifact@v7
         with:
           name: installers-${{ matrix.os }}
@@ -69,6 +74,12 @@ jobs:
             release/*.exe
             release/*.AppImage
             release/*.deb
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        if: matrix.os == 'windows-latest'
+        with:
+          name: store-package-windows
+          path: release/*.appx
           if-no-files-found: error
 
   # Adds SHA256SUMS.txt and publishes the draft, only when every platform succeeded.
@@ -79,6 +90,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
+          pattern: installers-*
           path: installers
           merge-multiple: true
       - name: Publish the release with checksums

@@ -2,6 +2,17 @@
 
 All notable changes to VariantScope are listed here, newest first.
 
+## [0.5.0] - 2026-11-05
+
+### What's new
+
+- **Microsoft Store package.** The release build on Windows now also makes a Store package (an `.appx` file) as a separate download, ready to upload to Partner Center. It is not part of the GitHub Release.
+- **Privacy policy page**, published with the website at `/privacy.html`. It says what is sent (the gene symbol, to UniProt, AlphaFold, NCBI and gnomAD), what is stored on your device, and that Reeper Studio collects nothing.
+
+### Notes
+
+- The app itself is unchanged. The Store package has not been built or submitted yet: the first real build is the Release workflow's dry run on Windows. See `docs/MICROSOFT_STORE.md`.
+
 ## [0.4.0] - 2026-11-05
 
 ### What's new

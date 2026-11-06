@@ -52,6 +52,19 @@ nsis:
 portable:
   artifactName: ${productName}-Portable-${version}-${os}-${arch}.${ext}
 
+# Microsoft Store package (built only by `electron-builder --win appx`, never by the normal Windows
+# build). The two identity values come from Partner Center -> Product management -> Product identity;
+# they are labels, not secrets. The Store signs the package itself, so no certificate is used here.
+appx:
+  identityName: ReeperStudio.VariantScope
+  publisher: CN=AAB363C9-E98D-4921-9267-E845C12AB9F9
+  publisherDisplayName: Reeper Studio
+  displayName: VariantScope
+  applicationId: VariantScope
+  backgroundColor: '#0E5A62'
+  languages: [en-US]
+  artifactName: ${productName}-Store-${version}-${arch}.${ext}
+
 linux:
   target:
     - target: AppImage
