@@ -29,6 +29,7 @@ The web version talks to the public APIs straight from your browser. If a source
 
 ## How to read the screen
 
+- **Gene overview.** Under the gene name: its full name and other names, the chromosome and the band on it (for example 17p13.1), its start and end position on the GRCh38 genome build and which strand it is on, plus a short "What it does" and "Where it is found" taken word for word from UniProt's curated text (literature references removed, with a Show more button for long ones). Anything a source does not provide says "not available", and a source that cannot be reached is named on the card.
 - **3D structure.** The ribbon is coloured by AlphaFold's confidence score, pLDDT: dark blue (> 90, very high), light blue (70 to 90, confident), yellow (50 to 70, low), orange (< 50, very low). Red spheres are pathogenic or likely pathogenic ClinVar variants. Benign (green) and VUS (gray) spheres are optional.
 - **Plot.** Each lollipop is a variant at its residue. Height is `-log10(gnomAD allele frequency)`, capped, so a tall stem means rare. **Variants not found in gnomAD get the full height.** Pathogenic is above the line, benign below. The strip under the axis is pLDDT again.
 - **Table.** Every variant with ClinVar's classification and review status, gnomAD frequency and rarity, pLDDT and how it was matched. Sort, filter, export CSV.
@@ -96,12 +97,12 @@ The adapter is the key design choice. Nothing outside `http.js` knows whether it
 
 All data comes straight from public APIs. There are no API keys, no paid services and no backend server. Nothing is invented: missing data is shown as "not available".
 
-| Source                                                  | What it provides                                                                                                           | Endpoint used                                    | Accessed   |
-| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ---------- |
-| [UniProt](https://www.uniprot.org/)                     | Gene to accession, protein name, the **reference sequence** used for all residue numbers (reviewed human entries only)     | `rest.uniprot.org/uniprotkb/search`              | 2 Nov 2026 |
-| [AlphaFold DB](https://alphafold.ebi.ac.uk/)            | Predicted 3D structure and per-residue pLDDT (model version 6 at the time of access, taken from the API, never hard-coded) | `alphafold.ebi.ac.uk/api/prediction/{accession}` | 2 Nov 2026 |
-| [ClinVar](https://www.ncbi.nlm.nih.gov/clinvar/) (NCBI) | Variants with germline classification and review status                                                                    | NCBI E-utilities `esearch` + `esummary`          | 2 Nov 2026 |
-| [gnomAD](https://gnomad.broadinstitute.org/)            | Allele frequencies and gene constraint (dataset `gnomad_r4`, GRCh38)                                                       | `gnomad.broadinstitute.org/api` (GraphQL)        | 2 Nov 2026 |
+| Source                                                  | What it provides                                                                                                                                                                  | Endpoint used                                    | Accessed   |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ---------- |
+| [UniProt](https://www.uniprot.org/)                     | Gene to accession, protein name, the **reference sequence** used for all residue numbers (reviewed human entries only), and the curated Function and Tissue text for the overview | `rest.uniprot.org/uniprotkb/search`              | 2 Nov 2026 |
+| [AlphaFold DB](https://alphafold.ebi.ac.uk/)            | Predicted 3D structure and per-residue pLDDT (model version 6 at the time of access, taken from the API, never hard-coded)                                                        | `alphafold.ebi.ac.uk/api/prediction/{accession}` | 2 Nov 2026 |
+| [ClinVar](https://www.ncbi.nlm.nih.gov/clinvar/) (NCBI) | Variants with germline classification and review status; also the Gene record for the overview (cytogenetic band, other names)                                                    | NCBI E-utilities `esearch` + `esummary`          | 2 Nov 2026 |
+| [gnomAD](https://gnomad.broadinstitute.org/)            | Allele frequencies and gene constraint (dataset `gnomad_r4`, GRCh38); also the gene's name and position for the overview                                                          | `gnomad.broadinstitute.org/api` (GraphQL)        | 2 Nov 2026 |
 
 Every response is shown with when it was fetched (and "cached N days ago" if it came from saved data, with an **Out of date** label after 7 days). The About box lists the exact data versions used for the gene on screen.
 
@@ -225,7 +226,7 @@ The output is in `dist/web`. For a GitHub Pages project site use `VITE_BASE=/Var
 **Tests**
 
 ```bash
-npm test             # 313 unit tests (parsing, join, stats, table logic, CSV, cache, contrast...)
+npm test             # 333 unit tests (parsing, join, stats, table logic, CSV, cache, contrast...)
 npm run lint
 npm run test:e2e     # end-to-end tests in a real browser and in Electron
 ```
@@ -250,8 +251,8 @@ npx electron-builder --publish never -c.directories.output=/tmp/variantscope-rel
 
 | Target                                                                                                                                                          | Status                                                                                                        |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Unit tests (313) and lint                                                                                                                                       | Tested locally: pass. About 97% statement coverage of `src/core/`                                             |
-| Web version in headless Chrome, live APIs (66 end-to-end tests: five genes, 3D picking, filters, exports, blocked sources, slow network, mobile, dark mode)     | Tested locally: pass                                                                                          |
+| Unit tests (333) and lint                                                                                                                                       | Tested locally: pass. About 97% statement coverage of `src/core/`                                             |
+| Web version in headless Chrome, live APIs (73 end-to-end tests: five genes, 3D picking, filters, exports, blocked sources, slow network, mobile, dark mode)     | Tested locally: pass                                                                                          |
 | Desktop app in development on macOS (34 end-to-end tests: security checks, IPC search, menus, saved genes, the home page and folders, disk cache, offline mode) | Tested locally: pass                                                                                          |
 | **macOS Apple Silicon (arm64) packaged app**                                                                                                                    | Tested locally: built, ad-hoc signature verified, DMG mounted, packaged app launched and loaded a gene        |
 | Real fullscreen and native Save dialogs in the desktop app                                                                                                      | **Not automated** (they would take over the screen); check by hand                                            |

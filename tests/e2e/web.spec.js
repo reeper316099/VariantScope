@@ -37,6 +37,14 @@ const GENES = {
   ],
 };
 
+// Chromosome, band and strand of each test gene, checked against NCBI Gene and gnomAD (GRCh38).
+const OVERVIEW = {
+  BRCA1: { chromosome: '17', band: '17q21.31', strand: 'Reverse' },
+  TP53: { chromosome: '17', band: '17p13.1', strand: 'Reverse' },
+  CFTR: { chromosome: '7', band: '7q31.2', strand: 'Forward' },
+  MLH1: { chromosome: '3', band: '3p22.2', strand: 'Forward' },
+};
+
 // Waits for the 3D camera animation after a selection to finish.
 const settle3d = (page) => page.waitForTimeout(1200);
 
@@ -59,6 +67,27 @@ for (const [gene, known] of Object.entries(GENES)) {
 
     test('renders without console errors so far', async () => {
       expect(record.errors).toEqual([]);
+    });
+
+    test('the gene overview shows the chromosome, band, position, strand and UniProt text', async () => {
+      const expected = OVERVIEW[gene];
+      const panel = page.locator('#overview-panel');
+      await expect(panel).toHaveAttribute('data-state', 'ready');
+      const fact = (label) =>
+        panel
+          .locator('.overview-fact')
+          .filter({ has: page.locator('dt', { hasText: new RegExp(`^${label}`) }) })
+          .locator('dd');
+      await expect(fact('Chromosome')).toHaveText(expected.chromosome);
+      await expect(fact('Position on chromosome')).toHaveText(expected.band);
+      await expect(fact('Genomic position')).toContainText(`chr${expected.chromosome}:`);
+      await expect(fact('Genomic position')).toContainText('GRCh38');
+      await expect(fact('Strand')).toContainText(expected.strand);
+      const text = panel.locator('.overview-text-block');
+      await expect(text).toContainText('What it does');
+      await expect(text.locator('.overview-text').first()).not.toHaveText('not available');
+      await expect(text.locator('.overview-text').first()).not.toContainText('PubMed');
+      await expect(panel).not.toContainText('Not loaded');
     });
 
     test('the 3D view loads and is coloured by pLDDT', async () => {
@@ -369,6 +398,20 @@ test.describe.serial('TP53 controls', () => {
     expect(Math.abs(reset.x - start.x)).toBeLessThan(2);
   });
 
+  test('overview: a long description starts short and "Show more" reveals the rest', async () => {
+    const panel = page.locator('#overview-panel');
+    const first = panel.locator('.overview-text').first();
+    const more = panel.getByRole('button', { name: /Show more: what the gene does/ });
+    const before = (await first.innerText()).length;
+    expect(before).toBeLessThan(500); // TP53's UniProt text is over 2,000 characters
+    await more.click();
+    await expect(more).toHaveText('Show less');
+    expect((await first.innerText()).length).toBeGreaterThan(1000);
+    await more.click();
+    await expect(more).toHaveText('Show more');
+    expect((await first.innerText()).length).toBe(before);
+  });
+
   test('About dialog opens with limitations and data versions', async () => {
     await page.getByRole('button', { name: 'About' }).click();
     await expect(page.locator('#about-dialog')).toBeVisible();
@@ -580,5 +623,44 @@ test.describe.serial('Saved genes (home page)', () => {
     expect(await order()).toEqual(['MLH1', 'TP53']);
     await page.selectOption('#home-sort', 'recent');
     expect(await order()).toEqual(['TP53', 'MLH1']);
+  });
+});
+
+test.describe.serial('Gene overview (CTLA4)', () => {
+  let context;
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    context = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+    page = await context.newPage();
+    await page.goto('/');
+    await loadGene(page, 'CTLA4');
+  });
+  test.afterAll(async () => {
+    await context.close();
+  });
+
+  test("shows CTLA4's band and UniProt's description of what it does", async () => {
+    const panel = page.locator('#overview-panel');
+    await expect(panel).toHaveAttribute('data-state', 'ready');
+    await expect(
+      panel.locator('.overview-fact', { hasText: 'Position on chromosome' }),
+    ).toContainText('2q33.2');
+    await expect(panel.locator('.overview-fact', { hasText: 'Also known as' })).toContainText(
+      'CD152',
+    );
+    await expect(panel.locator('.overview-text-block')).toContainText('T-cell');
+    await expect(panel.getByRole('link', { name: /full UniProt entry/ })).toHaveAttribute(
+      'href',
+      /uniprot\.org\/uniprotkb\/P16410/,
+    );
+  });
+
+  test('a saved gene still opens with the overview, from saved data', async () => {
+    await page.click('#brand-button');
+    await page.click('.gene-card[data-symbol=CTLA4] >> text=Open');
+    await waitSettled(page, 60_000);
+    await expect(page.locator('#overview-panel')).toHaveAttribute('data-state', 'ready');
+    await expect(page.locator('#overview-panel')).toContainText('2q33.2');
   });
 });

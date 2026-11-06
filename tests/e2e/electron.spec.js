@@ -226,6 +226,13 @@ test.describe.serial('Electron app', () => {
     for (const name of PANELS) expect(states[name], name).toBe('ready');
     await expect(page.locator('#viewer canvas')).toBeVisible();
     await expect(page.locator('#table tbody tr')).toHaveCount(50);
+    // The gene overview comes through the same IPC path (UniProt, NCBI Gene and gnomAD).
+    const overview = page.locator('#overview-panel');
+    await expect(overview).toHaveAttribute('data-state', 'ready');
+    await expect(overview).toContainText('17p13.1');
+    await expect(overview).toContainText('GRCh38');
+    await expect(overview).toContainText('transcription factor');
+    await expect(overview).not.toContainText('Not loaded');
     await selectInTable(page, 'p.Arg175His');
     await page.waitForTimeout(1200);
     expect(await page.locator('#viewer').getAttribute('data-selected-residue')).toBe('ARG175');

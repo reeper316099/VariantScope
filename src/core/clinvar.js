@@ -59,7 +59,7 @@ function sleep(ms, signal) {
 let queue = Promise.resolve();
 let lastNetworkCall = 0;
 // `req` is {signal, group, noCache}: cancellation, the gene tag for saved data, and Refresh.
-function ncbiGet(url, req, track) {
+export function ncbiGet(url, req, track) {
   const run = queue.then(async () => {
     await sleep(Math.max(0, lastNetworkCall + NCBI_GAP_MS - Date.now()), req.signal);
     const started = Date.now();

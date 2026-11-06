@@ -4,6 +4,7 @@ import { fetchUniprot } from './uniprot.js';
 import { fetchAlphaFold } from './alphafold.js';
 import { fetchClinvar } from './clinvar.js';
 import { fetchGnomadConstraint, fetchGnomadVariants } from './gnomad.js';
+import { fetchOverview } from './overview.js';
 import { joinVariants, numberingReport } from './join.js';
 import { summarize } from './stats.js';
 import { HttpError } from './http.js';
@@ -33,7 +34,7 @@ export async function loadGene(symbol, { signal, onProgress, maxVariants, refres
   const gene = uniprot.geneSymbol;
   const request = { signal, group: groupFor(gene), refresh };
 
-  const [alphafold, clinvar, gnomadVariants, constraint] = await Promise.all([
+  const [alphafold, clinvar, gnomadVariants, constraint, overview] = await Promise.all([
     settle(() => fetchAlphaFold(uniprot.accession, request)),
     settle(() =>
       fetchClinvar(gene, {
@@ -44,6 +45,7 @@ export async function loadGene(symbol, { signal, onProgress, maxVariants, refres
     ),
     settle(() => fetchGnomadVariants(gene, request)),
     settle(() => fetchGnomadConstraint(gene, request)),
+    settle(() => fetchOverview(gene, uniprot.accession, request)),
   ]);
 
   let variants = [];
@@ -66,13 +68,21 @@ export async function loadGene(symbol, { signal, onProgress, maxVariants, refres
     summary = summarize(variants, { skippedCount: clinvar.value.skipped.total });
   }
 
-  const provenance = buildProvenance({ uniprot, alphafold, clinvar, gnomadVariants, constraint });
+  const provenance = buildProvenance({
+    uniprot,
+    alphafold,
+    clinvar,
+    gnomadVariants,
+    constraint,
+    overview,
+  });
   return {
     gene: uniprot,
     alphafold,
     clinvar,
     gnomadVariants,
     constraint,
+    overview,
     variants,
     numbering,
     summary,
@@ -82,7 +92,7 @@ export async function loadGene(symbol, { signal, onProgress, maxVariants, refres
 }
 
 // Lists where each piece of data came from and when it was fetched (for the About box).
-function buildProvenance({ uniprot, alphafold, clinvar, gnomadVariants, constraint }) {
+function buildProvenance({ uniprot, alphafold, clinvar, gnomadVariants, constraint, overview }) {
   const entries = [{ source: 'UniProt', detail: uniprot.accession, ...pickMeta(uniprot) }];
   if (alphafold.status === 'ok' && alphafold.value) {
     const { entryId, modelVersion } = alphafold.value;
@@ -108,6 +118,16 @@ function buildProvenance({ uniprot, alphafold, clinvar, gnomadVariants, constrai
       detail: 'gene-level scores',
       ...pickMeta(constraint.value),
     });
+  }
+  if (overview.status === 'ok') {
+    const detail = {
+      UniProt: 'function text',
+      'NCBI Gene': 'band and names',
+      gnomAD: 'gene location',
+    };
+    for (const p of overview.value.parts) {
+      entries.push({ source: `${p.source} (overview)`, detail: detail[p.source], ...pickMeta(p) });
+    }
   }
   return entries;
 }

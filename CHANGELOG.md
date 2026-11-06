@@ -2,6 +2,19 @@
 
 All notable changes to VariantScope are listed here, newest first.
 
+## [0.4.0] - 2026-11-05
+
+### What's new
+
+- **Gene overview card.** Under the gene name you now see its full name and other names, its chromosome and band (for example 17p13.1), its start and end position on GRCh38 and its strand, plus **What it does** and **Where it is found**, shown as UniProt's own curated text. Literature references are removed, and long texts start short with a **Show more** button.
+- Anything a source does not give says "not available", and a source that could not be reached is named on the card; the rest of the page keeps working.
+
+### Notes
+
+- No new websites are contacted: the overview uses UniProt, NCBI Gene (the same NCBI host as ClinVar) and gnomAD. The desktop bridge is unchanged (still six functions).
+- Genes saved before this version open as before, even offline. The overview is downloaded the next time you open them with internet and then saved with the gene. Until then the card says it could not be loaded.
+- Positions come from gnomAD's gene record (the same GRCh38 build as the variant data). They show the gene's full extent in gnomAD's annotation, so other databases may give slightly different start and end numbers.
+
 ## [0.3.0] - 2026-11-04
 
 ### What's new

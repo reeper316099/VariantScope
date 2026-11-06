@@ -7,6 +7,7 @@ vi.mock('../../src/core/uniprot.js', async (importOriginal) => ({
 }));
 vi.mock('../../src/core/alphafold.js', () => ({ fetchAlphaFold: vi.fn() }));
 vi.mock('../../src/core/clinvar.js', () => ({ fetchClinvar: vi.fn() }));
+vi.mock('../../src/core/overview.js', () => ({ fetchOverview: vi.fn() }));
 vi.mock('../../src/core/gnomad.js', () => ({
   fetchGnomadVariants: vi.fn(),
   fetchGnomadConstraint: vi.fn(),
@@ -16,6 +17,7 @@ const { fetchUniprot, GeneNotFoundError } = await import('../../src/core/uniprot
 const { fetchAlphaFold } = await import('../../src/core/alphafold.js');
 const { fetchClinvar } = await import('../../src/core/clinvar.js');
 const { fetchGnomadVariants, fetchGnomadConstraint } = await import('../../src/core/gnomad.js');
+const { fetchOverview } = await import('../../src/core/overview.js');
 const { HttpError } = await import('../../src/core/http.js');
 const { loadGene } = await import('../../src/core/pipeline.js');
 
@@ -50,6 +52,13 @@ beforeEach(() => {
     variants: [{ variantId: '17-1-A-G', proteinKey: 'H4R', ac: 1, an: 1_000_000, af: 1e-6 }],
   });
   fetchGnomadConstraint.mockResolvedValue({ pli: 0.9 });
+  fetchOverview.mockResolvedValue({
+    function: 'Does a thing.',
+    parts: [
+      { source: 'UniProt', fetchedAt: 5000, fromCache: false },
+      { source: 'gnomAD', fetchedAt: 6000, fromCache: false },
+    ],
+  });
 });
 
 describe('loadGene', () => {
@@ -62,6 +71,22 @@ describe('loadGene', () => {
     expect(r.variants[0]).toMatchObject({ plddt: 95, rarity: 'ultra-rare', numberingOk: true });
     expect(r.numbering.flagged).toBe(false);
     expect(r.summary.skipped).toBe(3);
+  });
+
+  it('adds the gene overview and lists its sources in the provenance', async () => {
+    const r = await loadGene('gene1');
+    expect(r.overview).toMatchObject({ status: 'ok', value: { function: 'Does a thing.' } });
+    expect(fetchOverview.mock.calls[0].slice(0, 2)).toEqual(['GENE1', 'P1']);
+    const sources = r.provenance.map((p) => p.source);
+    expect(sources).toEqual(expect.arrayContaining(['UniProt (overview)', 'gnomAD (overview)']));
+  });
+
+  it('partial: a failed overview does not break the rest or the freshness', async () => {
+    fetchOverview.mockRejectedValue(new Error('all down'));
+    const r = await loadGene('gene1');
+    expect(r.overview).toEqual({ status: 'failed', error: 'all down', kind: null });
+    expect(r.clinvar.status).toBe('ok');
+    expect(r.provenance.some((p) => p.source.includes('overview'))).toBe(false);
   });
 
   it('uses the official gene symbol from UniProt for the other sources', async () => {
@@ -185,6 +210,7 @@ describe('loadGene: saved data, groups and Refresh', () => {
     fetchClinvar.mockResolvedValue({ ...clinvarResult, ...stamp(2) });
     fetchGnomadVariants.mockResolvedValue({ variants: [], ...stamp(2) });
     fetchGnomadConstraint.mockResolvedValue({ pli: 1, ...stamp(2) });
+    fetchOverview.mockResolvedValue({ parts: [{ source: 'UniProt', ...stamp(2) }] });
     const old = await loadGene('gene1');
     expect(old.freshness.outOfDate).toBe(true);
     expect(old.freshness.fromCache).toBe(true);

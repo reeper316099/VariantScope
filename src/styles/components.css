@@ -931,3 +931,45 @@ select {
   gap: 8px;
   margin-top: 14px;
 }
+
+/* ---------- Gene overview ---------- */
+.overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px 28px;
+}
+
+@media (min-width: 900px) {
+  .overview-grid {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  }
+}
+
+.overview-facts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.overview-fact dt {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.overview-fact dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.overview-text-block h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.overview-text-block h3:not(:first-child) {
+  margin-top: 12px;
+}
+
+.overview-text {
+  margin: 0 0 6px;
+}

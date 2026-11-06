@@ -9,6 +9,7 @@ import {
   formatPct,
   formatScore,
 } from '../core/format.js';
+import { splitSummary } from '../core/overview.js';
 import { PLDDT_CONFIDENT, RARITY_THRESHOLDS } from '../core/stats.js';
 import { buildSummarySentences } from '../core/summaryText.js';
 import { clear, el, externalLink, fill } from './dom.js';
@@ -360,6 +361,97 @@ export function renderProvenance(root, provenance) {
           text: `${p.source} (${p.detail}): fetched ${formatDateTime(p.fetchedAt)}${p.fromCache ? ' (from cache)' : ''}`,
         }),
       ),
+    ),
+  );
+}
+
+// A paragraph of source text: the first part is shown, and a button reveals the rest.
+function expandableText(text, label) {
+  const { short, rest } = splitSummary(text);
+  const paragraph = el('p', { class: 'overview-text', text: short });
+  if (rest === null) return paragraph;
+  const more = el('span', { text: ` ${rest}`, hidden: true });
+  paragraph.append(more);
+  const button = el('button', {
+    class: 'button button-small',
+    type: 'button',
+    text: 'Show more',
+    'aria-expanded': 'false',
+    'aria-label': `Show more: ${label}`,
+    onclick: () => {
+      more.hidden = !more.hidden;
+      button.textContent = more.hidden ? 'Show more' : 'Show less';
+      button.setAttribute('aria-expanded', String(!more.hidden));
+    },
+  });
+  return el('div', {}, paragraph, button);
+}
+
+// One labelled fact in the overview; a missing value says "not available".
+function overviewFact(label, value) {
+  return el(
+    'div',
+    { class: 'overview-fact' },
+    el('dt', { text: label }),
+    el('dd', { text: value ?? NOT_AVAILABLE }),
+  );
+}
+
+// Fills the Gene overview card: names, where the gene is on the genome, what it does and where it
+// is active. Text is UniProt's own wording; every missing piece says "not available".
+export function renderOverview(root, overview, gene) {
+  const place =
+    overview.chromosome && overview.start && overview.stop
+      ? `chr${overview.chromosome}:${formatCount(overview.start)}\u2013${formatCount(overview.stop)} (${overview.build})`
+      : null;
+  const strand = { '+': 'Forward (+)', '-': 'Reverse (\u2212)' }[overview.strand] ?? null;
+  fill(
+    root,
+    el(
+      'div',
+      { class: 'overview-grid' },
+      el(
+        'dl',
+        { class: 'overview-facts' },
+        overviewFact('Full name', overview.geneName ?? gene.proteinName),
+        overviewFact(
+          'Also known as',
+          overview.aliases.length > 0 ? overview.aliases.join(', ') : null,
+        ),
+        overviewFact('Chromosome', overview.chromosome),
+        overviewFact('Position on chromosome (band)', overview.band),
+        overviewFact('Genomic position', place),
+        overviewFact('Strand', strand),
+      ),
+      el(
+        'div',
+        { class: 'overview-text-block' },
+        el('h3', { text: 'What it does' }),
+        overview.function
+          ? expandableText(overview.function, 'what the gene does')
+          : el('p', { class: 'muted', text: NOT_AVAILABLE }),
+        el('h3', { text: 'Where it is found' }),
+        overview.tissue
+          ? expandableText(overview.tissue, 'where the gene is found')
+          : el('p', { class: 'muted', text: NOT_AVAILABLE }),
+      ),
+    ),
+    overview.problems.length > 0
+      ? el('p', {
+          class: 'message-error',
+          text: `Not loaded: ${overview.problems.map((p) => `${p.source} (${p.error})`).join('; ')}.`,
+        })
+      : null,
+    el(
+      'p',
+      { class: 'note' },
+      'Descriptions are UniProt\u2019s curated text (literature references removed). The band comes from NCBI Gene; positions come from gnomAD on the GRCh38 genome build, which is the same build as the variant data here, and show the gene\u2019s full extent in gnomAD\u2019s annotation, so other databases may differ slightly. Forward means the gene is read left to right along the chromosome as numbered. ',
+      externalLink(
+        `https://www.uniprot.org/uniprotkb/${gene.accession}/entry#function`,
+        'Read the full UniProt entry',
+        `Read the full UniProt entry for ${gene.geneSymbol}`,
+      ),
+      '.',
     ),
   );
 }

@@ -22,6 +22,7 @@ import { GeneNotFoundError } from './core/uniprot.js';
 import {
   renderBanners,
   renderConstraint,
+  renderOverview,
   renderGeneHeader,
   renderMeaning,
   renderProvenance,
@@ -424,6 +425,16 @@ async function renderResult(result) {
   else {
     renderConstraint($('constraint'), constraint.value);
     setPanelState(panels.constraint, 'ready');
+  }
+
+  if (result.overview.status === 'ok') {
+    renderOverview($('overview'), result.overview.value, gene);
+    setPanelState(panels.overview, 'ready');
+  } else {
+    setPanelState(panels.overview, 'error', {
+      message: `The gene overview could not be loaded: ${result.overview.error}`,
+      onRetry: retry,
+    });
   }
 
   renderSelected($('selected'), null);
